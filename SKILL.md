@@ -1,8 +1,8 @@
 ```skill
 ---
 name: complex-task-automator
-version: 2.2.0
-description: "高级任务自动化引擎 - 支持信息搜集、大纲管理、文档撰写、Git 远程推送的全链路自动化。24/7 无人值守，OpenClaw Cron 自动调度，批量章节生成，六维度多指标质量检测，持续网络搜索优化，健康检查与飞书推送。包含依赖管理、并行执行、失败重试、断点恢复与完整执行追踪。"
+version: 2.3.0
+description: "高级任务自动化引擎 - 支持信息搜集、大纲管理、文档撰写、Git 远程推送的全链路自动化。24/7 无人值守，OpenClaw Cron 自动调度，批量章节生成，六维度多指标质量检测，持续网络搜索优化，健康检查与飞书推送。统一配置管理、共享工具模块、结构化日志、零重复代码。包含依赖管理、并行执行、失败重试、断点恢复与完整执行追踪。"
 author: openclaw
 metadata:
   tags:
@@ -831,6 +831,35 @@ Git 提交 + 推送
 | **Workers** | 实际执行任务的工作节点 |
 | **Logger** | 记录执行日志和状态变更 |
 | **State Manager** | 管理任务状态和检查点 |
+
+### 共享工具模块 (v2.3.0)
+
+`utils.py` 是所有脚本的公共基础设施，消除了原来分散在 13 个脚本中的重复代码：
+
+```
+┌─────────────────────────────────────────────────────┐
+│                    utils.py                          │
+├──────────────┬──────────────┬───────────────────────┤
+│ 配置管理      │ 文件操作      │ 基础设施              │
+│              │              │                       │
+│ load_config()│ parse_outline│ setup_logger()        │
+│ cfg("a.b")  │ find_chapters│ progress_bar()        │
+│ get_*_dir() │ read_chapter │ banner()              │
+│             │ load/save_json│ run_git()             │
+│             │ word_count() │ check_disk_health()   │
+│             │              │ cleanup_old_caches()  │
+│             │              │ trim_history()        │
+└──────────────┴──────────────┴───────────────────────┘
+         ↑ 被 13 个脚本统一导入
+```
+
+**统一配置源** — `config.yaml` 中的所有参数通过 `cfg("section.key")` 点路径访问：
+```python
+from utils import cfg, setup_logger
+logger = setup_logger("my_script")
+min_words = cfg("quality.min_words_per_chapter", 800)
+remote = cfg("git.remote_name", "origin")
+```
 
 ---
 
@@ -1686,6 +1715,30 @@ task-graph <workflow.yaml>
 ---
 
 ## 版本历史
+
+### v2.3.0 (2026-03-09)
+- **新增** `utils.py` 共享工具模块：统一 `parse_outline()`(6处)、`find_completed_chapters()`(5处) 等重复函数
+- **新增** `config.yaml` 统一配置源：消除 MIN_WORDS 500/800/2000/5000 四处不一致
+- **新增** `setup_logger()` 结构化日志：全部 13 个脚本接入，替代散乱的 `print()`
+- **新增** `.gitignore`：排除 `__pycache__/`、`checkpoints/`、`*.log`
+- **修复** `generate_report.py` 致命 KeyError：兼容 `check_quality.py` v1/v2 两种 JSON 格式
+- **修复** `daemon.py` sys.argv hack：改用环境变量 + `importlib.reload()` 传参
+- **修复** `git_workflow.py` 硬编码远程名：使用 `cfg()` 读取 `git.remote_name`
+- **修复** `optimize_chapter.py` 硬编码 "zxk"：支持 `MAX_OPTIMIZE_CHAPTERS` 环境变量
+- **改进** `research.py` 合并至 `web_researcher.py`（保留 20 行兼容 shim）
+- **改进** `web_researcher.py`：缓存清理、Tavily 脚本存在性检查、`find_completed_numbers()` 迭代
+- **改进** `check_dependencies.py`：GitHub 风格锚点生成、双向引用检查（上一章/下一章）
+- **改进** `manage_outline.py`：内容差异检测避免重复快照
+- **改进** `batch_runner.py`：完成列表去重、动态计算工作流路径
+- **清理** 5 处死代码导入（math/glob/sys/subprocess/hashlib）、3+ 未使用函数
+- **清理** 3 个 workflow YAML 统一参数、移除脆弱的 DDG curl 搜索任务
+
+### v2.2.0 (2026-03-08)
+- **新增** 六维度质量检测系统（内容充实度、结构完整性、代码质量、可读性、教学价值、时效性）
+- **新增** `web_researcher.py`：Tavily 网络搜索 + 智能缓存 + 自动优化识别
+- **新增** `optimize_chapter.py`：持续优化引擎，搜索→合并→质检→提交全自动
+- **新增** `workflow-optimize.yaml`：独立优化工作流
+- **改进** 全部 13 章优化至平均 98.1 分（A 级）
 
 ### v2.1.0 (2026-03-07)
 - **新增** 24/7 自动调度：OpenClaw Cron 定时触发批量章节生成
