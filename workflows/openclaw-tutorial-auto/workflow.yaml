@@ -1,0 +1,242 @@
+# =========================================================
+#  OpenClaw Tutorial Auto — 项目自动化工作流
+# =========================================================
+#  功能: 环境检查 → 质量分析 → 进度追踪 → 依赖检查 → 报告生成
+#  Skill: complex-task-automator
+# =========================================================
+
+name: openclaw-tutorial-automation
+version: "1.0"
+description: "openclaw-tutorial-auto 项目自动化开发辅助工作流：状态检查、质量分析、进度追踪、依赖审查、报告生成"
+
+variables:
+  PROJECT_DIR: /root/.openclaw/workspace/zxk-private/openclaw-tutorial-auto
+  OUTPUT_DIR: /tmp/openclaw-tutorial-auto-reports
+  SCRIPTS_DIR: /root/.openclaw/workspace/skills/complex-task-automator/workflows/openclaw-tutorial-auto/scripts
+  MIN_WORDS: "800"
+  MIN_SECTIONS: "3"
+
+config:
+  execution:
+    max_parallel: 3
+    timeout: 300
+  schedule:
+    type: once
+
+tasks:
+  # ============================
+  #  阶段 1: 初始化
+  # ============================
+  - id: init
+    name: "初始化输出目录"
+    type: shell
+    config:
+      command: |
+        mkdir -p ${OUTPUT_DIR}
+        echo "✓ 输出目录已准备: ${OUTPUT_DIR}"
+        echo "✓ 项目目录: ${PROJECT_DIR}"
+        echo "✓ 时间: $(date '+%Y-%m-%d %H:%M:%S')"
+      env:
+        OUTPUT_DIR: "${OUTPUT_DIR}"
+        PROJECT_DIR: "${PROJECT_DIR}"
+    timeout: 10
+
+  # ============================
+  #  阶段 2: 并行检查（环境 + 质量 + 依赖）
+  # ============================
+  - id: check-env
+    name: "环境与项目状态检查"
+    type: python
+    config:
+      script: "${SCRIPTS_DIR}/check_env.py"
+      env:
+        PROJECT_DIR: "${PROJECT_DIR}"
+        OUTPUT_DIR: "${OUTPUT_DIR}"
+    depends_on: [init]
+    timeout: 30
+    retry:
+      max_attempts: 2
+      backoff: fixed
+      initial_delay: 3
+    on_failure: continue
+
+  - id: check-quality
+    name: "Markdown 内容质量检查"
+    type: python
+    config:
+      script: "${SCRIPTS_DIR}/check_quality.py"
+      env:
+        PROJECT_DIR: "${PROJECT_DIR}"
+        OUTPUT_DIR: "${OUTPUT_DIR}"
+        MIN_WORDS: "${MIN_WORDS}"
+        MIN_SECTIONS: "${MIN_SECTIONS}"
+    depends_on: [init]
+    timeout: 60
+    retry:
+      max_attempts: 2
+      backoff: fixed
+      initial_delay: 3
+    on_failure: continue
+
+  - id: check-deps
+    name: "依赖与链接完整性检查"
+    type: python
+    config:
+      script: "${SCRIPTS_DIR}/check_dependencies.py"
+      env:
+        PROJECT_DIR: "${PROJECT_DIR}"
+        OUTPUT_DIR: "${OUTPUT_DIR}"
+    depends_on: [init]
+    timeout: 30
+    retry:
+      max_attempts: 2
+      backoff: fixed
+      initial_delay: 3
+    on_failure: continue
+
+  # ============================
+  #  阶段 3: 进度分析（等待环境检查完成）
+  # ============================
+  - id: analyze-progress
+    name: "进度分析与任务规划"
+    type: python
+    config:
+      script: "${SCRIPTS_DIR}/analyze_progress.py"
+      env:
+        PROJECT_DIR: "${PROJECT_DIR}"
+        OUTPUT_DIR: "${OUTPUT_DIR}"
+    depends_on: [check-env]
+    timeout: 30
+    on_failure: continue
+
+  # ============================
+  #  阶段 4: 文件结构审查
+  # ============================
+  - id: file-structure
+    name: "文件结构与目录审查"
+    type: shell
+    config:
+      command: |
+        echo "=========================================="
+        echo "  文件结构审查报告"
+        echo "=========================================="
+        echo ""
+        echo "--- 项目目录 ---"
+        ls -lah "${PROJECT_DIR}/"
+        echo ""
+        echo "--- 文件列表 ---"
+        find "${PROJECT_DIR}" -maxdepth 2 -type f | sort
+        echo ""
+        echo "--- Markdown 文件统计 ---"
+        MD_COUNT=$(find "${PROJECT_DIR}" -name "*.md" -type f | wc -l)
+        echo "Markdown 文件数: ${MD_COUNT}"
+        echo ""
+        echo "--- 各文件大小 ---"
+        for f in "${PROJECT_DIR}"/*.md; do
+          if [ -f "$f" ]; then
+            SIZE=$(wc -c < "$f")
+            LINES=$(wc -l < "$f")
+            echo "  $(basename "$f"): ${SIZE} bytes, ${LINES} lines"
+          fi
+        done
+        echo ""
+        echo "--- 总大小 ---"
+        du -sh "${PROJECT_DIR}/"
+      env:
+        PROJECT_DIR: "${PROJECT_DIR}"
+    depends_on: [init]
+    timeout: 15
+    on_failure: continue
+
+  # ============================
+  #  阶段 5: 生成综合报告
+  # ============================
+  - id: generate-report
+    name: "生成项目自动化报告"
+    type: python
+    config:
+      script: "${SCRIPTS_DIR}/generate_report.py"
+      env:
+        PROJECT_DIR: "${PROJECT_DIR}"
+        OUTPUT_DIR: "${OUTPUT_DIR}"
+    depends_on: [check-quality, check-deps, analyze-progress]
+    timeout: 30
+
+  # ============================
+  #  阶段 7: 归档日志
+  # ============================
+  - id: archive-log
+    name: "归档执行日志"
+    type: shell
+    config:
+      command: |
+        TIMESTAMP=$(date '+%Y%m%d-%H%M%S')
+        ARCHIVE_DIR="${OUTPUT_DIR}/history"
+        mkdir -p "${ARCHIVE_DIR}"
+        
+        # 复制当前报告到历史
+        if [ -f "${OUTPUT_DIR}/project-report.md" ]; then
+          cp "${OUTPUT_DIR}/project-report.md" "${ARCHIVE_DIR}/report-${TIMESTAMP}.md"
+          echo "✓ 报告已归档: ${ARCHIVE_DIR}/report-${TIMESTAMP}.md"
+        fi
+        
+        # 汇总所有 JSON 到一个文件
+        echo "{" > "${ARCHIVE_DIR}/full-${TIMESTAMP}.json"
+        echo "  \"timestamp\": \"${TIMESTAMP}\"," >> "${ARCHIVE_DIR}/full-${TIMESTAMP}.json"
+        echo "  \"files\": [" >> "${ARCHIVE_DIR}/full-${TIMESTAMP}.json"
+        FIRST=true
+        for f in "${OUTPUT_DIR}"/0*.json; do
+          if [ -f "$f" ]; then
+            if [ "$FIRST" = true ]; then
+              FIRST=false
+            else
+              echo "," >> "${ARCHIVE_DIR}/full-${TIMESTAMP}.json"
+            fi
+            echo "    {\"file\": \"$(basename "$f")\", \"size\": $(wc -c < "$f")}" >> "${ARCHIVE_DIR}/full-${TIMESTAMP}.json"
+          fi
+        done
+        echo "" >> "${ARCHIVE_DIR}/full-${TIMESTAMP}.json"
+        echo "  ]" >> "${ARCHIVE_DIR}/full-${TIMESTAMP}.json"
+        echo "}" >> "${ARCHIVE_DIR}/full-${TIMESTAMP}.json"
+        
+        echo "✓ 完整归档: ${ARCHIVE_DIR}/full-${TIMESTAMP}.json"
+        echo ""
+        echo "=== 当前报告目录 ==="
+        ls -la "${OUTPUT_DIR}/"
+      env:
+        OUTPUT_DIR: "${OUTPUT_DIR}"
+    depends_on: [generate-report]
+    timeout: 15
+
+  # ============================
+  #  阶段 8: 完成通知
+  # ============================
+  - id: notify
+    name: "输出执行摘要"
+    type: shell
+    config:
+      command: |
+        echo ""
+        echo "╔════════════════════════════════════════════╗"
+        echo "║  🎯 项目自动化工作流执行完成               ║"
+        echo "╚════════════════════════════════════════════╝"
+        echo ""
+        echo "📁 项目路径:   ${PROJECT_DIR}"
+        echo "📊 报告路径:   ${OUTPUT_DIR}/project-report.md"
+        echo "📦 归档路径:   ${OUTPUT_DIR}/history/"
+        echo "⏰ 完成时间:   $(date '+%Y-%m-%d %H:%M:%S')"
+        echo ""
+        echo "--- 执行阶段 ---"
+        echo "  ✅ 环境与项目检查"
+        echo "  ✅ Markdown 质量分析"
+        echo "  ✅ 依赖与链接检查"
+        echo "  ✅ 进度分析与任务规划"
+        echo "  ✅ 文件结构审查"
+        echo "  ✅ 综合报告生成"
+        echo "  ✅ 日志归档"
+        echo ""
+      env:
+        PROJECT_DIR: "${PROJECT_DIR}"
+        OUTPUT_DIR: "${OUTPUT_DIR}"
+    depends_on: [archive-log]
+    timeout: 10

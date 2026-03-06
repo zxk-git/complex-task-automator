@@ -18,12 +18,22 @@ openclaw-tutorial-auto 项目 — 多维度章节质量检测系统 v2
   python check_quality.py --chapter 5  # 检查指定章节
   python check_quality.py --verbose    # 详细输出
 """
-import os, sys, json, re, math
+import os, sys, json, re
 from pathlib import Path
 from datetime import datetime
 
-PROJECT_DIR = os.environ.get("PROJECT_DIR", "/root/.openclaw/workspace/zxk-private/openclaw-tutorial-auto")
-OUTPUT_DIR  = os.environ.get("OUTPUT_DIR", "/tmp/openclaw-tutorial-auto-reports")
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, SCRIPT_DIR)
+try:
+    from utils import get_project_dir, get_output_dir, cfg, setup_logger, save_json, get_encoding
+    log = setup_logger("check_quality")
+except ImportError:
+    # Standalone mode - no utils available
+    import logging
+    log = logging.getLogger("check_quality")
+
+PROJECT_DIR = os.environ.get("PROJECT_DIR", get_project_dir() if 'get_project_dir' in dir() else "/root/.openclaw/workspace/zxk-private/openclaw-tutorial-auto")
+OUTPUT_DIR = os.environ.get("OUTPUT_DIR", get_output_dir() if 'get_output_dir' in dir() else "/tmp/openclaw-tutorial-auto-reports")
 
 # 维度权重 (总和 1.0)
 WEIGHTS = {
@@ -36,17 +46,20 @@ WEIGHTS = {
 }
 
 # 阈值配置
+def _cfg_int(key, default):
+    return int(cfg(key, default) if 'cfg' in dir() else default)
+
 THRESHOLDS = {
-    "min_words": 800,
-    "ideal_words": 1500,
-    "min_sections": 3,
-    "ideal_sections": 5,
-    "min_code_blocks": 2,
-    "min_paragraphs": 5,
-    "max_para_length": 300,
-    "min_tables": 1,
-    "stale_hours": 72,
-    "very_stale_hours": 168,
+    "min_words": _cfg_int("quality.min_words_per_chapter", 800),
+    "ideal_words": _cfg_int("quality.ideal_words_per_chapter", 1500),
+    "min_sections": _cfg_int("quality.min_sections", 3),
+    "ideal_sections": _cfg_int("quality.ideal_sections", 5),
+    "min_code_blocks": _cfg_int("quality.min_code_blocks", 2),
+    "min_paragraphs": _cfg_int("quality.min_paragraphs", 5),
+    "max_para_length": _cfg_int("quality.max_para_length", 300),
+    "min_tables": _cfg_int("quality.min_tables", 1),
+    "stale_hours": _cfg_int("quality.stale_hours", 72),
+    "very_stale_hours": _cfg_int("quality.very_stale_hours", 168),
 }
 
 

@@ -2,50 +2,48 @@
 """
 optimize_chapter.py — 基于网络最新信息优化已有章节
 核心流程: 搜索 → 对比 → 识别差异 → 合并新信息 → 重写 → 质量检查 → 提交
-
-工作模式:
-  1. 对比当前章节内容与最新网络信息
-  2. 识别过时内容、缺失信息、可改进点
-  3. 在保留原有结构的基础上增补新内容
-  4. 质量验证后自动提交
-
-用法:
-  python optimize_chapter.py                       # 自动选择最需要优化的章节
-  python optimize_chapter.py --chapter 5           # 优化指定章节
-  python optimize_chapter.py --all                 # 优化所有章节
-  python optimize_chapter.py --dry-run             # 空运行
-  python optimize_chapter.py --max-chapters 3      # 最多优化 N 章
 """
-import os, json, re, sys, time, subprocess, shutil
+import os
+import sys
+import re
+import time
+import shutil
+import subprocess
 from pathlib import Path
 from datetime import datetime
 
-SCRIPT_DIR   = os.path.dirname(os.path.abspath(__file__))
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, SCRIPT_DIR)
 
-PROJECT_DIR  = os.environ.get("PROJECT_DIR", "/root/.openclaw/workspace/zxk-private/openclaw-tutorial-auto")
-OUTPUT_DIR   = os.environ.get("OUTPUT_DIR", "/tmp/openclaw-tutorial-auto-reports")
-DRY_RUN      = os.environ.get("DRY_RUN", "false").lower() == "true"
-OPENCLAW_DIR = os.environ.get("OPENCLAW_DIR", "/root/.openclaw")
+from utils import (
+    get_project_dir, get_output_dir, read_chapter as utils_read_chapter,
+    save_json, load_json, setup_logger, cfg, banner,
+    get_git_remote_name, run_git, word_count, trim_history,
+)
 
-# 最小优化间隔 (小时)——同一章节多久可以再次优化
-MIN_OPTIMIZE_INTERVAL_HOURS = int(os.environ.get("MIN_OPTIMIZE_INTERVAL_HOURS", "12"))
+log = setup_logger("optimize")
 
-# 优化历史文件
+PROJECT_DIR = get_project_dir()
+OUTPUT_DIR = get_output_dir()
+DRY_RUN = os.environ.get("DRY_RUN", "false").lower() == "true"
+
+MIN_OPTIMIZE_INTERVAL_HOURS = int(os.environ.get(
+    "MIN_OPTIMIZE_INTERVAL_HOURS",
+    cfg("optimize.min_interval_hours", 12),
+))
 OPTIMIZE_HISTORY_FILE = os.path.join(OUTPUT_DIR, "optimize-history.json")
 
 
 def load_optimize_history() -> dict:
-    if Path(OPTIMIZE_HISTORY_FILE).is_file():
-        return json.loads(Path(OPTIMIZE_HISTORY_FILE).read_text(encoding="utf-8"))
+    data = load_json(OPTIMIZE_HISTORY_FILE)
+    if data:
+        return data
     return {"history": [], "stats": {"total_optimizations": 0, "chapters_optimized": {}}}
 
 
 def save_optimize_history(history: dict):
-    Path(OUTPUT_DIR).mkdir(parents=True, exist_ok=True)
-    Path(OPTIMIZE_HISTORY_FILE).write_text(
-        json.dumps(history, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
+    history = trim_history(history, int(cfg("optimize.history_max_entries", 200)))
+    save_json(OPTIMIZE_HISTORY_FILE, history)
 
 
 def can_optimize_chapter(chapter_num: int, history: dict) -> bool:
@@ -62,24 +60,8 @@ def can_optimize_chapter(chapter_num: int, history: dict) -> bool:
 
 
 def read_chapter(chapter_num: int) -> dict | None:
-    """读取章节文件"""
-    proj = Path(PROJECT_DIR)
-    for f in proj.iterdir():
-        if f.is_file() and f.name.endswith('.md') and f.name.startswith(f"{chapter_num:02d}"):
-            text = f.read_text(encoding="utf-8")
-            headings = re.findall(r'^(#{1,3})\s+(.+)', text, re.MULTILINE)
-            code_blocks_count = len(re.findall(r'```', text)) // 2
-            word_count = len(re.findall(r'[\u4e00-\u9fff]', text)) + len(re.findall(r'[a-zA-Z]+', text))
-            return {
-                "path": str(f),
-                "file": f.name,
-                "content": text,
-                "word_count": word_count,
-                "code_blocks": code_blocks_count,
-                "headings": [{"level": len(h[0]), "text": h[1]} for h in headings],
-                "char_count": len(text),
-            }
-    return None
+    """读取章节文件（delegate to utils）"""
+    return utils_read_chapter(chapter_num, PROJECT_DIR)
 
 
 def load_research_data(chapter_num: int) -> dict | None:
@@ -281,21 +263,21 @@ def optimize_single_chapter(chapter_num: int, research_data: dict = None) -> dic
     # 如果没有预加载的研究数据，执行搜索
     if not research_data:
         import web_researcher
-        print(f"  🌐 搜索第 {chapter_num} 章最新信息...")
+        log.info(f"搜索第 {chapter_num} 章最新信息...")
         research_data = web_researcher.research_chapter(chapter_num)
 
     # 提取新信息
     new_info = extract_new_info(research_data, chapter["content"])
 
     if not new_info:
-        print(f"  ℹ️ 无新信息可补充")
+        log.info("无新信息可补充")
         return {"status": "no_update", "reason": "no_new_info", "chapter": chapter_num}
 
     # 构建优化后的内容
-    print(f"  📝 发现 {len(new_info)} 条新信息，开始优化...")
+    log.info(f"发现 {len(new_info)} 条新信息，开始优化...")
 
     if DRY_RUN:
-        print(f"  🔍 [DRY RUN] 跳过实际写入")
+        log.info("[DRY RUN] 跳过实际写入")
         return {
             "status": "dry_run",
             "chapter": chapter_num,
@@ -314,7 +296,7 @@ def optimize_single_chapter(chapter_num: int, research_data: dict = None) -> dic
         # 写入优化后内容
         Path(chapter["path"]).write_text(optimized_content, encoding="utf-8")
 
-        new_wc = len(re.findall(r'[\u4e00-\u9fff]', optimized_content)) + len(re.findall(r'[a-zA-Z]+', optimized_content))
+        new_wc = word_count(optimized_content)
 
         result = {
             "status": "optimized",
@@ -325,10 +307,10 @@ def optimize_single_chapter(chapter_num: int, research_data: dict = None) -> dic
             "new_info_merged": len(new_info),
             "backup": backup_path,
         }
-        print(f"  ✅ 优化完成: {chapter['word_count']} → {new_wc} 字")
+        log.info(f"优化完成: {chapter['word_count']} → {new_wc} 字")
         return result
     else:
-        print(f"  ⚠️ 优化内容未改进，保留原文")
+        log.warning("优化内容未改进，保留原文")
         return {"status": "no_improvement", "chapter": chapter_num}
 
 
@@ -407,7 +389,7 @@ def select_chapters_to_optimize(max_chapters: int = 3) -> list:
 
         # 检查冷却期
         if not can_optimize_chapter(ch_num, history):
-            print(f"  ⏳ 第 {ch_num} 章: 冷却中，跳过")
+            log.info(f"第 {ch_num} 章: 冷却中，跳过")
             continue
 
         research = load_research_data(ch_num)
@@ -441,12 +423,13 @@ def run():
     if args.dry_run:
         DRY_RUN = True
 
-    print("╔══════════════════════════════════════════════════════╗")
-    print("║  🔄 章节持续优化引擎 — Optimizer                     ║")
-    print("╚══════════════════════════════════════════════════════╝")
-    print(f"  时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print(f"  模式: {'空运行' if DRY_RUN else '实际优化'}")
-    print()
+    max_chap = args.max_chapters
+    if max_chap == 3:  # default
+        max_chap = int(os.environ.get("MAX_OPTIMIZE_CHAPTERS", str(max_chap)))
+
+    banner("章节持续优化引擎 — Optimizer", "🔄")
+    log.info(f"时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    log.info(f"模式: {'空运行' if DRY_RUN else '实际优化'}")
 
     history = load_optimize_history()
     results = []
@@ -458,30 +441,26 @@ def run():
         chapters = list(range(1, 14))
     else:
         # 自动选择
-        candidates = select_chapters_to_optimize(args.max_chapters)
+        candidates = select_chapters_to_optimize(max_chap)
         if not candidates:
-            print("✅ 所有章节状态良好，无需优化")
+            log.info("所有章节状态良好，无需优化")
             return {"status": "all_good", "optimized": 0}
-        print(f"📊 优化候选 ({len(candidates)} 章):")
+        log.info(f"优化候选 ({len(candidates)} 章):")
         for c in candidates:
-            print(f"  第 {c['chapter']:2d} 章 | 评分 {c['score']:3d} | {', '.join(c['reasons'][:2])}")
-        print()
+            log.info(f"  第 {c['chapter']:2d} 章 | 评分 {c['score']:3d} | {', '.join(c['reasons'][:2])}")
         chapters = [c["chapter"] for c in candidates]
 
     # 先进行搜索
-    print("🌐 阶段 1: 网络信息搜集")
-    print("─" * 50)
+    banner("阶段 1: 网络信息搜集", "🌐")
     import web_researcher
     for ch_num in chapters:
-        print(f"\n📖 第 {ch_num} 章:")
+        log.info(f"第 {ch_num} 章: 搜索中...")
         web_researcher.research_chapter(ch_num)
 
     # 再进行优化
-    print("\n\n📝 阶段 2: 章节优化")
-    print("─" * 50)
+    banner("阶段 2: 章节优化", "📝")
     for ch_num in chapters:
-        print(f"\n──────────────────────────────────────────────────")
-        print(f"📖 第 {ch_num} 章:")
+        log.info(f"── 第 {ch_num} 章 ──")
         research = load_research_data(ch_num)
         result = optimize_single_chapter(ch_num, research)
         results.append(result)
@@ -509,18 +488,15 @@ def run():
     # Git 提交（如果有优化）
     optimized_count = len([r for r in results if r["status"] == "optimized"])
     if optimized_count > 0 and not DRY_RUN:
-        print("\n\n📤 阶段 3: Git 提交")
-        print("─" * 50)
+        banner("阶段 3: Git 提交", "📤")
         git_commit_optimization(results)
 
     # 汇总
-    print("\n╔══════════════════════════════════════════════════════╗")
-    print("║  📊 优化汇总                                         ║")
-    print("╚══════════════════════════════════════════════════════╝")
-    print(f"  总章节: {len(chapters)}")
-    print(f"  已优化: {optimized_count}")
-    print(f"  无更新: {len([r for r in results if r['status'] == 'no_update'])}")
-    print(f"  无改进: {len([r for r in results if r['status'] == 'no_improvement'])}")
+    banner("优化汇总", "📊")
+    log.info(f"总章节: {len(chapters)}")
+    log.info(f"已优化: {optimized_count}")
+    log.info(f"无更新: {len([r for r in results if r['status'] == 'no_update'])}")
+    log.info(f"无改进: {len([r for r in results if r['status'] == 'no_improvement'])}")
 
     summary = {
         "timestamp": datetime.now().isoformat(),
@@ -529,45 +505,35 @@ def run():
         "results": results,
     }
 
-    Path(OUTPUT_DIR).mkdir(parents=True, exist_ok=True)
-    (Path(OUTPUT_DIR) / "optimize-result.json").write_text(
-        json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
+    save_json(os.path.join(OUTPUT_DIR, "optimize-result.json"), summary)
 
     return summary
 
 
 def git_commit_optimization(results: list):
     """提交优化变更到 Git"""
-    proj = PROJECT_DIR
     try:
-        optimized_chapters = [r for r in results if r["status"] == "optimized"]
-        if not optimized_chapters:
+        optimized = [r for r in results if r["status"] == "optimized"]
+        if not optimized:
             return
+        nums = [str(r["chapter"]) for r in optimized]
+        msg = f"optimize: 基于网络最新信息优化第 {', '.join(nums)} 章 [{datetime.now().strftime('%Y-%m-%d %H:%M')}]"
 
-        chapter_nums = [str(r["chapter"]) for r in optimized_chapters]
-        msg = f"optimize: 基于网络最新信息优化第 {', '.join(chapter_nums)} 章 [{datetime.now().strftime('%Y-%m-%d %H:%M')}]"
-
-        subprocess.run(["git", "add", "-A"], cwd=proj, capture_output=True, timeout=10)
-        result = subprocess.run(
-            ["git", "commit", "-m", msg],
-            cwd=proj, capture_output=True, text=True, timeout=10
-        )
-        if result.returncode == 0:
-            print(f"  ✅ 已提交: {msg}")
-            # 推送
-            push_result = subprocess.run(
-                ["git", "push", "zxk", "main"],
-                cwd=proj, capture_output=True, text=True, timeout=30
-            )
-            if push_result.returncode == 0:
-                print(f"  📤 已推送到 GitHub")
+        run_git(["add", "-A"], PROJECT_DIR)
+        result = run_git(["commit", "-m", msg], PROJECT_DIR)
+        if result["ok"]:
+            log.info(f"已提交: {msg}")
+            remote_name = get_git_remote_name()
+            branch = cfg("git.branch", "main")
+            push = run_git(["push", remote_name, branch], PROJECT_DIR)
+            if push["ok"]:
+                log.info("已推送到 GitHub")
             else:
-                print(f"  ⚠️ 推送失败: {push_result.stderr[:100]}")
+                log.warning(f"推送失败: {push['stderr'][:100]}")
         else:
-            print(f"  ℹ️ 无变更需提交")
+            log.info("无变更需提交")
     except Exception as e:
-        print(f"  ⚠️ Git 操作异常: {e}")
+        log.error(f"Git 操作异常: {e}")
 
 
 if __name__ == "__main__":

@@ -1,0 +1,77 @@
+# =========================================================
+# openclaw-tutorial-auto ─ 项目自动化统一配置
+# =========================================================
+# 所有脚本通过 utils.cfg() 读取本文件作为唯一参数来源。
+# 环境变量优先级高于此文件。
+# =========================================================
+
+# ── 路径 ─────────────────────────────────────────────
+project_dir: /root/.openclaw/workspace/zxk-private/openclaw-tutorial-auto
+output_dir: /tmp/openclaw-tutorial-auto-reports
+outline_file: OUTLINE.md
+encoding: utf-8
+
+# ── 章节 ─────────────────────────────────────────────
+expected_chapters: 13
+
+# ── 质量检查 (check_quality.py 六维度) ────────────────
+quality:
+  min_words_per_chapter: 800        # 单章最低字数
+  min_sections_per_chapter: 3       # 最少 H2 小节数
+  max_heading_depth: 4              # 最大标题嵌套层级
+  require_code_blocks: true
+  require_summary: true
+  pass_score: 70                    # 合格分数线 (0-100)
+
+# ── 批量生成 (batch_runner.py) ────────────────────────
+batch:
+  max_chapters_per_run: 3
+  cooldown_seconds: 30
+  max_consecutive_failures: 3
+
+# ── 持续优化 (optimize_chapter.py) ───────────────────
+optimize:
+  min_interval_hours: 12            # 同一章节冷却期
+  max_chapters: 3                   # 每轮最多优化章节数
+  history_max_entries: 200          # 优化历史最大条目数
+
+# ── 搜索 (web_researcher.py) ─────────────────────────
+search:
+  tavily_script: /root/.openclaw/workspace/skills/tavily-search/scripts/search.mjs
+  cache_max_days: 7                 # 缓存过期天数
+  max_results_per_query: 5
+  rate_limit_seconds: 1             # 搜索间隔
+
+# ── Git ──────────────────────────────────────────────
+git:
+  auto_commit: true
+  branch: main
+  remote_url: ""                    # 留空则不自动推送
+  remote_name: zxk                  # git remote 名称
+  safe_patterns:                    # 允许自动提交的文件模式
+    - ".*\\.md$"
+    - ".*\\.gitignore$"
+    - ".*\\.json$"
+
+# ── 健康检查 (health_check.py) ───────────────────────
+health:
+  max_hours_no_progress: 24
+  max_consecutive_failures: 3
+
+# ── 任务执行 ─────────────────────────────────────────
+execution:
+  max_parallel: 4
+  timeout: 300
+  retry_on_fail: true
+  max_retries: 2
+
+# ── 报告 ─────────────────────────────────────────────
+report:
+  format: markdown
+  include_file_tree: true
+  include_quality_details: true
+  include_suggestions: true
+  include_next_steps: true
+
+# ── 日志 ─────────────────────────────────────────────
+log_level: INFO

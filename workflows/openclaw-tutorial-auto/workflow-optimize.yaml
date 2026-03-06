@@ -1,0 +1,168 @@
+# =========================================================
+#  OpenClaw Tutorial Auto — 持续优化工作流
+# =========================================================
+#  24/7 搜索网络最新信息 → 分析章节差距 → 自动优化内容 →
+#  质量验证 → Git 提交推送 → 飞书通知
+#
+#  这是教程生成完成后的持续维护阶段核心
+# =========================================================
+
+name: openclaw-tutorial-continuous-optimize
+version: "1.0"
+description: "24/7 持续优化：网络搜索 → 内容分析 → 章节增补 → Git 推送"
+
+variables:
+  PROJECT_DIR: /root/.openclaw/workspace/zxk-private/openclaw-tutorial-auto
+  OUTPUT_DIR: /tmp/openclaw-tutorial-auto-reports
+  SCRIPTS_DIR: /root/.openclaw/workspace/skills/complex-task-automator/workflows/openclaw-tutorial-auto/scripts
+  DRY_RUN: "false"
+  GIT_REMOTE: ""                 # 从 config.yaml 读取
+  MAX_CHAPTERS_PER_RUN: "3"
+  MIN_OPTIMIZE_INTERVAL_HOURS: "12"
+
+config:
+  execution:
+    max_parallel: 1
+    timeout: 900
+  schedule:
+    type: cron
+    cron: "0 */6 * * *"         # 每6小时运行一次
+    timezone: "Asia/Shanghai"
+
+tasks:
+  # ============================================================
+  #  阶段 1: 初始化 + 状态检查
+  # ============================================================
+  - id: init
+    name: "初始化优化环境"
+    type: shell
+    config:
+      command: |
+        mkdir -p "${OUTPUT_DIR}/research-cache" "${OUTPUT_DIR}/history"
+        echo "╔════════════════════════════════════════════════════╗"
+        echo "║  🔄 24/7 持续优化工作流                           ║"
+        echo "╚════════════════════════════════════════════════════╝"
+        echo ""
+        echo "📁 项目: ${PROJECT_DIR}"
+        echo "⏰ 时间: $(date '+%Y-%m-%d %H:%M:%S')"
+        echo ""
+        echo "--- 当前章节状态 ---"
+        cd "${PROJECT_DIR}" && for f in *.md; do
+          [ "$f" = "README.md" ] || [ "$f" = "OUTLINE.md" ] && continue
+          WC=$(wc -c < "$f" 2>/dev/null || echo 0)
+          echo "  $f — ${WC} bytes"
+        done
+      env:
+        PROJECT_DIR: "${PROJECT_DIR}"
+        OUTPUT_DIR: "${OUTPUT_DIR}"
+    timeout: 15
+
+  # ============================================================
+  #  阶段 2: 网络信息搜集
+  # ============================================================
+  - id: web-research
+    name: "搜索网络最新信息"
+    type: python
+    config:
+      script: "${SCRIPTS_DIR}/web_researcher.py"
+      env:
+        PROJECT_DIR: "${PROJECT_DIR}"
+        OUTPUT_DIR: "${OUTPUT_DIR}"
+    depends_on: [init]
+    timeout: 300
+    retry:
+      max_attempts: 2
+      delay: 30
+
+  # ============================================================
+  #  阶段 3: 章节优化
+  # ============================================================
+  - id: optimize
+    name: "基于搜索结果优化章节"
+    type: python
+    config:
+      script: "${SCRIPTS_DIR}/optimize_chapter.py"
+      args: ["--max-chapters", "${MAX_CHAPTERS_PER_RUN}"]
+      env:
+        PROJECT_DIR: "${PROJECT_DIR}"
+        OUTPUT_DIR: "${OUTPUT_DIR}"
+        DRY_RUN: "${DRY_RUN}"
+        MIN_OPTIMIZE_INTERVAL_HOURS: "${MIN_OPTIMIZE_INTERVAL_HOURS}"
+    depends_on: [web-research]
+    timeout: 600
+
+  # ============================================================
+  #  阶段 4: 质量验证
+  # ============================================================
+  - id: quality-check
+    name: "优化后质量验证"
+    type: python
+    config:
+      script: "${SCRIPTS_DIR}/check_quality.py"
+      env:
+        PROJECT_DIR: "${PROJECT_DIR}"
+        OUTPUT_DIR: "${OUTPUT_DIR}"
+    depends_on: [optimize]
+    timeout: 60
+
+  # ============================================================
+  #  阶段 5: Git 提交推送
+  # ============================================================
+  - id: git-push
+    name: "Git 提交并推送"
+    type: python
+    config:
+      script: "${SCRIPTS_DIR}/git_workflow.py"
+      env:
+        PROJECT_DIR: "${PROJECT_DIR}"
+        OUTPUT_DIR: "${OUTPUT_DIR}"
+        GIT_AUTO_COMMIT: "true"
+        GIT_BRANCH: "main"
+        GIT_REMOTE: "${GIT_REMOTE}"
+    depends_on: [quality-check]
+    timeout: 60
+
+  # ============================================================
+  #  阶段 6: 健康报告 + 通知
+  # ============================================================
+  - id: report
+    name: "生成优化报告"
+    type: shell
+    config:
+      command: |
+        echo "╔════════════════════════════════════════════════════╗"
+        echo "║  📊 持续优化报告                                  ║"
+        echo "╚════════════════════════════════════════════════════╝"
+        echo ""
+
+        # 读取优化结果
+        if [ -f "${OUTPUT_DIR}/optimize-result.json" ]; then
+          echo "--- 优化结果 ---"
+          cat "${OUTPUT_DIR}/optimize-result.json" | python3 -c "
+import sys,json
+data=json.load(sys.stdin)
+print(f\"  优化章节数: {data.get('optimized', 0)}\")
+print(f\"  检查章节数: {data.get('total_checked', 0)}\")
+for r in data.get('results', []):
+    ch = r.get('chapter', '?')
+    st = r.get('status', '?')
+    before = r.get('before', {}).get('word_count', '-')
+    after = r.get('after', {}).get('word_count', '-')
+    if st == 'optimized':
+        print(f\"  ✅ 第{ch}章: {before} → {after} 字\")
+    elif st == 'no_update':
+        print(f\"  ℹ️  第{ch}章: 无需更新\")
+    else:
+        print(f\"  ⏭️  第{ch}章: {st}\")
+" 2>/dev/null || echo "  (无法解析结果)"
+        else
+          echo "  (无优化结果文件)"
+        fi
+
+        echo ""
+        echo "⏰ 完成时间: $(date '+%Y-%m-%d %H:%M:%S')"
+        echo "📅 下一次优化: 约6小时后"
+      env:
+        OUTPUT_DIR: "${OUTPUT_DIR}"
+    depends_on: [git-push]
+    timeout: 15

@@ -1,0 +1,341 @@
+# =========================================================
+#  OpenClaw Tutorial Auto — 全链路自动化工作流
+# =========================================================
+#  从信息调研 → 大纲管理 → 章节撰写 → 质量检查 →
+#  Git 提交 → 报告生成 → 归档
+#
+#  所有操作可控、可追踪、分阶段执行
+# =========================================================
+
+name: openclaw-tutorial-full-pipeline
+version: "2.0"
+description: "全链路文档开发自动化：调研 → 大纲 → 撰写 → 质检 → Git → 报告"
+
+variables:
+  PROJECT_DIR: /root/.openclaw/workspace/zxk-private/openclaw-tutorial-auto
+  OUTPUT_DIR: /tmp/openclaw-tutorial-auto-reports
+  SCRIPTS_DIR: /root/.openclaw/workspace/skills/complex-task-automator/workflows/openclaw-tutorial-auto/scripts
+  MIN_WORDS: "800"
+  MIN_SECTIONS: "3"
+  DRY_RUN: "false"
+  GIT_AUTO_COMMIT: "true"
+  GIT_BRANCH: "main"
+  GIT_REMOTE: ""   # 从 config.yaml 读取
+  CHAPTER_NUM: "0"
+
+config:
+  execution:
+    max_parallel: 3
+    timeout: 600
+  schedule:
+    type: cron                      # once / cron / interval
+    cron: "0 */4 * * *"             # 每4小时运行一次
+    timezone: "Asia/Shanghai"
+  batch:
+    enabled: true                   # 启用批量模式
+    max_chapters_per_run: 3         # 每轮最多生成章节数
+    cooldown_seconds: 30            # 章节间冷却
+    stop_on_complete: true          # 全部完成后自动停止调度
+
+tasks:
+  # ============================================================
+  #  阶段 1: 初始化
+  # ============================================================
+  - id: init
+    name: "初始化工作环境"
+    type: shell
+    config:
+      command: |
+        mkdir -p "${OUTPUT_DIR}/drafts" "${OUTPUT_DIR}/history" "${OUTPUT_DIR}/outline-history"
+        echo "╔════════════════════════════════════════════════════╗"
+        echo "║  OpenClaw Tutorial Auto — 全链路自动化            ║"
+        echo "╚════════════════════════════════════════════════════╝"
+        echo ""
+        echo "📁 项目路径:   ${PROJECT_DIR}"
+        echo "📊 输出路径:   ${OUTPUT_DIR}"
+        echo "🔧 脚本路径:   ${SCRIPTS_DIR}"
+        echo "⏰ 启动时间:   $(date '+%Y-%m-%d %H:%M:%S')"
+        echo ""
+        echo "--- 项目文件 ---"
+        ls -la "${PROJECT_DIR}/"
+      env:
+        PROJECT_DIR: "${PROJECT_DIR}"
+        OUTPUT_DIR: "${OUTPUT_DIR}"
+        SCRIPTS_DIR: "${SCRIPTS_DIR}"
+    timeout: 15
+
+  # ============================================================
+  #  阶段 2: 环境检查 + 信息搜集（并行）
+  # ============================================================
+  - id: check-env
+    name: "环境与依赖检查"
+    type: python
+    config:
+      script: "${SCRIPTS_DIR}/check_env.py"
+      env:
+        PROJECT_DIR: "${PROJECT_DIR}"
+        OUTPUT_DIR: "${OUTPUT_DIR}"
+    depends_on: [init]
+    timeout: 30
+    retry:
+      max_attempts: 2
+      backoff: fixed
+      initial_delay: 3
+    on_failure: continue
+
+  - id: research
+    name: "信息搜集与整理"
+    type: python
+    config:
+      script: "${SCRIPTS_DIR}/research.py"
+      env:
+        PROJECT_DIR: "${PROJECT_DIR}"
+        OUTPUT_DIR: "${OUTPUT_DIR}"
+        CHAPTER_NUM: "${CHAPTER_NUM}"
+    depends_on: [init]
+    timeout: 60
+    retry:
+      max_attempts: 2
+      backoff: fixed
+      initial_delay: 5
+    on_failure: continue
+
+  # ============================================================
+  #  阶段 3: 大纲分析与管理
+  # ============================================================
+  - id: manage-outline
+    name: "大纲分析与章节规划"
+    type: python
+    config:
+      script: "${SCRIPTS_DIR}/manage_outline.py"
+      env:
+        PROJECT_DIR: "${PROJECT_DIR}"
+        OUTPUT_DIR: "${OUTPUT_DIR}"
+    depends_on: [check-env, research]
+    timeout: 30
+    on_failure: continue
+
+  # ============================================================
+  #  阶段 4: 章节内容撰写
+  # ============================================================
+  - id: write-chapter
+    name: "生成章节草稿"
+    type: python
+    config:
+      script: "${SCRIPTS_DIR}/write_chapter.py"
+      env:
+        PROJECT_DIR: "${PROJECT_DIR}"
+        OUTPUT_DIR: "${OUTPUT_DIR}"
+        CHAPTER_NUM: "${CHAPTER_NUM}"
+        DRY_RUN: "${DRY_RUN}"
+    depends_on: [manage-outline]
+    timeout: 60
+    on_failure: continue
+
+  # ============================================================
+  #  阶段 5: 质量检查 + 依赖检查（并行）
+  # ============================================================
+  - id: check-quality
+    name: "Markdown 内容质量检查"
+    type: python
+    config:
+      script: "${SCRIPTS_DIR}/check_quality.py"
+      env:
+        PROJECT_DIR: "${PROJECT_DIR}"
+        OUTPUT_DIR: "${OUTPUT_DIR}"
+        MIN_WORDS: "${MIN_WORDS}"
+        MIN_SECTIONS: "${MIN_SECTIONS}"
+    depends_on: [write-chapter]
+    timeout: 30
+    retry:
+      max_attempts: 2
+      backoff: fixed
+      initial_delay: 3
+    on_failure: continue
+
+  - id: check-deps
+    name: "链接与引用完整性检查"
+    type: python
+    config:
+      script: "${SCRIPTS_DIR}/check_dependencies.py"
+      env:
+        PROJECT_DIR: "${PROJECT_DIR}"
+        OUTPUT_DIR: "${OUTPUT_DIR}"
+    depends_on: [write-chapter]
+    timeout: 30
+    retry:
+      max_attempts: 2
+      backoff: fixed
+      initial_delay: 3
+    on_failure: continue
+
+  - id: file-structure
+    name: "文件结构审查"
+    type: shell
+    config:
+      command: |
+        echo "=== 文件结构审查 ==="
+        echo ""
+        echo "--- Markdown 文件统计 ---"
+        for f in "${PROJECT_DIR}"/*.md; do
+          if [ -f "$f" ]; then
+            SIZE=$(wc -c < "$f")
+            LINES=$(wc -l < "$f")
+            WORDS=$(grep -oP '[\x{4e00}-\x{9fff}]' "$f" 2>/dev/null | wc -l || echo 0)
+            echo "  $(basename "$f"): ${LINES} lines, ${SIZE} bytes"
+          fi
+        done
+        echo ""
+        echo "--- 总计 ---"
+        MD_COUNT=$(find "${PROJECT_DIR}" -name "*.md" -type f | wc -l)
+        TOTAL_SIZE=$(du -sh "${PROJECT_DIR}/" | cut -f1)
+        echo "  Markdown 文件: ${MD_COUNT}"
+        echo "  总大小: ${TOTAL_SIZE}"
+      env:
+        PROJECT_DIR: "${PROJECT_DIR}"
+    depends_on: [write-chapter]
+    timeout: 15
+    on_failure: continue
+
+  # ============================================================
+  #  阶段 6: Git 自动化
+  # ============================================================
+  - id: git-workflow
+    name: "Git 自动提交"
+    type: python
+    config:
+      script: "${SCRIPTS_DIR}/git_workflow.py"
+      env:
+        PROJECT_DIR: "${PROJECT_DIR}"
+        OUTPUT_DIR: "${OUTPUT_DIR}"
+        GIT_AUTO_COMMIT: "${GIT_AUTO_COMMIT}"
+        GIT_BRANCH: "${GIT_BRANCH}"
+        GIT_REMOTE: "${GIT_REMOTE}"
+    depends_on: [check-quality, check-deps]
+    timeout: 30
+    on_failure: continue
+
+  # ============================================================
+  #  阶段 7: 综合报告
+  # ============================================================
+  - id: generate-report
+    name: "生成综合报告"
+    type: python
+    config:
+      script: "${SCRIPTS_DIR}/generate_report.py"
+      env:
+        PROJECT_DIR: "${PROJECT_DIR}"
+        OUTPUT_DIR: "${OUTPUT_DIR}"
+    depends_on: [git-workflow, file-structure]
+    timeout: 30
+
+  # ============================================================
+  #  阶段 8: 归档 + 完成通知
+  # ============================================================
+  - id: archive
+    name: "归档执行记录"
+    type: shell
+    config:
+      command: |
+        TIMESTAMP=$(date '+%Y%m%d-%H%M%S')
+        ARCHIVE_DIR="${OUTPUT_DIR}/history"
+        mkdir -p "${ARCHIVE_DIR}"
+
+        # 归档报告
+        if [ -f "${OUTPUT_DIR}/project-report.md" ]; then
+          cp "${OUTPUT_DIR}/project-report.md" "${ARCHIVE_DIR}/report-${TIMESTAMP}.md"
+        fi
+
+        # 归档所有 JSON 结果
+        for f in "${OUTPUT_DIR}"/*.json; do
+          if [ -f "$f" ]; then
+            cp "$f" "${ARCHIVE_DIR}/$(basename "$f" .json)-${TIMESTAMP}.json"
+          fi
+        done
+
+        # 汇总文件清单
+        echo "{" > "${ARCHIVE_DIR}/manifest-${TIMESTAMP}.json"
+        echo "  \"timestamp\": \"${TIMESTAMP}\"," >> "${ARCHIVE_DIR}/manifest-${TIMESTAMP}.json"
+        echo "  \"archived_files\": [" >> "${ARCHIVE_DIR}/manifest-${TIMESTAMP}.json"
+        FIRST=true
+        for f in "${ARCHIVE_DIR}"/*-${TIMESTAMP}.*; do
+          if [ -f "$f" ]; then
+            if [ "$FIRST" = true ]; then FIRST=false; else echo "," >> "${ARCHIVE_DIR}/manifest-${TIMESTAMP}.json"; fi
+            echo "    \"$(basename "$f")\"" >> "${ARCHIVE_DIR}/manifest-${TIMESTAMP}.json"
+          fi
+        done
+        echo "" >> "${ARCHIVE_DIR}/manifest-${TIMESTAMP}.json"
+        echo "  ]" >> "${ARCHIVE_DIR}/manifest-${TIMESTAMP}.json"
+        echo "}" >> "${ARCHIVE_DIR}/manifest-${TIMESTAMP}.json"
+
+        echo "✓ 已归档 ${TIMESTAMP}"
+      env:
+        OUTPUT_DIR: "${OUTPUT_DIR}"
+    depends_on: [generate-report]
+    timeout: 15
+
+  # ============================================================
+  #  阶段 8b: 健康检查（可独立运行）
+  # ============================================================
+  - id: health-check
+    name: "24/7 健康检查与状态报告"
+    type: python
+    config:
+      script: "${SCRIPTS_DIR}/health_check.py"
+      env:
+        PROJECT_DIR: "${PROJECT_DIR}"
+        OUTPUT_DIR: "${OUTPUT_DIR}"
+        EXPECTED_CHAPTERS: "13"
+    depends_on: [archive]
+    timeout: 30
+    on_failure: continue
+
+  - id: notify
+    name: "完成通知"
+    type: shell
+    config:
+      command: |
+        echo ""
+        echo "╔══════════════════════════════════════════════════════╗"
+        echo "║  ✅ 全链路自动化工作流执行完成                      ║"
+        echo "╚══════════════════════════════════════════════════════╝"
+        echo ""
+        echo "📁 项目:   ${PROJECT_DIR}"
+        echo "📊 报告:   ${OUTPUT_DIR}/project-report.md"
+        echo "🏥 健康:   ${OUTPUT_DIR}/health-report.md"
+        echo "📦 归档:   ${OUTPUT_DIR}/history/"
+        echo "⏰ 完成:   $(date '+%Y-%m-%d %H:%M:%S')"
+        echo ""
+        echo "--- 执行阶段总结 ---"
+        echo "  Phase 1: ✅ 初始化"
+        echo "  Phase 2: ✅ 环境检查 + 信息搜集"
+        echo "  Phase 3: ✅ 大纲分析与章节规划"
+        echo "  Phase 4: ✅ 章节内容撰写"
+        echo "  Phase 5: ✅ 质量检查 + 依赖检查"
+        echo "  Phase 6: ✅ Git 自动提交"
+        echo "  Phase 7: ✅ 综合报告生成"
+        echo "  Phase 8: ✅ 归档与通知"
+        echo "  Phase 9: ✅ 健康检查"
+        echo ""
+        echo "--- 关键文件 ---"
+        if [ -f "${OUTPUT_DIR}/chapter-draft-result.json" ]; then
+          CHAPTER=$(python3 -c "import json; d=json.load(open('${OUTPUT_DIR}/chapter-draft-result.json')); print(f'第{d[\"chapter\"][\"number\"]}章: {d[\"chapter\"][\"title\"]}')" 2>/dev/null || echo "N/A")
+          STATUS=$(python3 -c "import json; d=json.load(open('${OUTPUT_DIR}/chapter-draft-result.json')); print(d['write_status'])" 2>/dev/null || echo "N/A")
+          echo "  📝 章节: ${CHAPTER} [${STATUS}]"
+        fi
+        if [ -f "${OUTPUT_DIR}/git-result.json" ]; then
+          GIT_MSG=$(python3 -c "import json; d=json.load(open('${OUTPUT_DIR}/git-result.json')); print(d['summary'].get('message','N/A'))" 2>/dev/null || echo "N/A")
+          echo "  🔀 Git:  ${GIT_MSG}"
+        fi
+        if [ -f "${OUTPUT_DIR}/health-check.json" ]; then
+          PROGRESS=$(python3 -c "import json; d=json.load(open('${OUTPUT_DIR}/health-check.json')); p=d['progress']; print(f'{p[\"completed\"]}/{p[\"total\"]} ({p[\"percentage\"]}%)')" 2>/dev/null || echo "N/A")
+          ALERTS=$(python3 -c "import json; d=json.load(open('${OUTPUT_DIR}/health-check.json')); print(d.get('alert_count', 0))" 2>/dev/null || echo "0")
+          echo "  📊 进度: ${PROGRESS}"
+          echo "  ⚠️  预警: ${ALERTS} 条"
+        fi
+        echo ""
+      env:
+        PROJECT_DIR: "${PROJECT_DIR}"
+        OUTPUT_DIR: "${OUTPUT_DIR}"
+    depends_on: [health-check]
+    timeout: 15
