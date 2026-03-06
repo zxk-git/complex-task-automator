@@ -1,0 +1,175 @@
+#!/usr/bin/env python3
+"""
+openclaw-tutorial-auto 项目 — Markdown 质量检查
+检查每个章节文件的内容质量指标
+"""
+import os, sys, json, re
+from pathlib import Path
+from datetime import datetime
+
+PROJECT_DIR = os.environ.get("PROJECT_DIR", "/root/.openclaw/workspace/zxk-private/openclaw-tutorial-auto")
+OUTPUT_DIR  = os.environ.get("OUTPUT_DIR", "/tmp/openclaw-tutorial-auto-reports")
+MIN_WORDS   = int(os.environ.get("MIN_WORDS", "500"))
+MIN_SECTIONS = int(os.environ.get("MIN_SECTIONS", "3"))
+
+def analyze_chapter(filepath: Path) -> dict:
+    """分析单个章节文件"""
+    text = filepath.read_text(encoding="utf-8")
+    lines = text.splitlines()
+
+    # 基础统计
+    char_count = len(text)
+    line_count = len(lines)
+    # 中文字数 + 英文单词数
+    chinese_chars = len(re.findall(r'[\u4e00-\u9fff]', text))
+    english_words = len(re.findall(r'[a-zA-Z]+', text))
+    word_count = chinese_chars + english_words
+
+    # 标题结构
+    headings = []
+    for i, line in enumerate(lines, 1):
+        m = re.match(r'^(#{1,6})\s+(.+)', line)
+        if m:
+            headings.append({
+                "level": len(m.group(1)),
+                "text": m.group(2).strip(),
+                "line": i
+            })
+
+    # 代码块
+    code_blocks = []
+    in_block = False
+    block_start = 0
+    block_lang = ""
+    for i, line in enumerate(lines, 1):
+        if line.strip().startswith('```') and not in_block:
+            in_block = True
+            block_start = i
+            block_lang = line.strip()[3:].strip()
+        elif line.strip().startswith('```') and in_block:
+            in_block = False
+            code_blocks.append({
+                "start": block_start,
+                "end": i,
+                "language": block_lang,
+                "lines": i - block_start - 1
+            })
+
+    # 表格
+    tables = len(re.findall(r'^\|.*\|$', text, re.MULTILINE))
+
+    # 链接与图片
+    links = re.findall(r'\[([^\]]*)\]\(([^)]+)\)', text)
+    images = [l for l in links if l[1].endswith(('.png', '.jpg', '.gif', '.svg'))]
+    external_links = [l for l in links if l[1].startswith('http')]
+
+    # 检查是否有"本章小结"
+    has_summary = bool(re.search(r'(本章小结|小结|总结|Summary)', text))
+
+    # 检查是否有"下一章"引用
+    has_next_chapter = bool(re.search(r'(下一章|Next|next chapter)', text))
+
+    # 质量问题
+    issues = []
+    if word_count < MIN_WORDS:
+        issues.append(f"字数不足: {word_count} < {MIN_WORDS}")
+    section_count = len([h for h in headings if h["level"] == 2])
+    if section_count < MIN_SECTIONS:
+        issues.append(f"小节数不足: {section_count} < {MIN_SECTIONS}")
+    if not code_blocks:
+        issues.append("缺少代码示例")
+    if not has_summary:
+        issues.append("缺少'本章小结'段落")
+
+    # 检查空标题
+    for h in headings:
+        if not h["text"].strip():
+            issues.append(f"第 {h['line']} 行：空标题")
+
+    # 检查重复标题
+    heading_texts = [h["text"] for h in headings]
+    seen = set()
+    for ht in heading_texts:
+        if ht in seen:
+            issues.append(f"重复标题: {ht}")
+        seen.add(ht)
+
+    quality_score = 100
+    quality_score -= len(issues) * 10
+    quality_score = max(0, quality_score)
+
+    return {
+        "file": filepath.name,
+        "stats": {
+            "characters": char_count,
+            "lines": line_count,
+            "word_count": word_count,
+            "chinese_chars": chinese_chars,
+            "english_words": english_words,
+        },
+        "structure": {
+            "headings": len(headings),
+            "h1": len([h for h in headings if h["level"] == 1]),
+            "h2": len([h for h in headings if h["level"] == 2]),
+            "h3": len([h for h in headings if h["level"] == 3]),
+            "heading_tree": headings,
+        },
+        "content": {
+            "code_blocks": len(code_blocks),
+            "code_details": code_blocks,
+            "tables": tables,
+            "links": len(links),
+            "external_links": len(external_links),
+            "images": len(images),
+            "has_summary": has_summary,
+            "has_next_chapter": has_next_chapter,
+        },
+        "quality": {
+            "score": quality_score,
+            "issues": issues,
+            "pass": len(issues) == 0
+        }
+    }
+
+
+def run():
+    proj = Path(PROJECT_DIR)
+    chapter_files = sorted([f for f in proj.iterdir()
+                            if f.is_file() and f.name[0:2].isdigit() and f.name.endswith('.md')])
+
+    results = {
+        "timestamp": datetime.now().isoformat(),
+        "project_dir": PROJECT_DIR,
+        "chapters_analyzed": len(chapter_files),
+        "chapters": [],
+        "summary": {},
+    }
+
+    total_score = 0
+    total_issues = 0
+    total_words = 0
+
+    for f in chapter_files:
+        analysis = analyze_chapter(f)
+        results["chapters"].append(analysis)
+        total_score += analysis["quality"]["score"]
+        total_issues += len(analysis["quality"]["issues"])
+        total_words += analysis["stats"]["word_count"]
+
+    n = len(chapter_files) or 1
+    results["summary"] = {
+        "average_score": round(total_score / n, 1),
+        "total_issues": total_issues,
+        "total_words": total_words,
+        "average_words": round(total_words / n),
+        "all_pass": total_issues == 0,
+    }
+
+    # 保存
+    Path(OUTPUT_DIR).mkdir(parents=True, exist_ok=True)
+    out_file = Path(OUTPUT_DIR) / "02-quality-check.json"
+    out_file.write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(json.dumps(results, ensure_ascii=False, indent=2))
+
+if __name__ == "__main__":
+    run()

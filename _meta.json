@@ -1,0 +1,11 @@
+{
+  "slug": "complex-task-automator",
+  "version": "2.2.0",
+  "name": "Complex Task Automator",
+  "description": "高级任务自动化引擎 - 支持信息搜集、大纲管理、文档撰写、Git 远程推送的全链路自动化。24/7 无人值守，OpenClaw Cron 自动调度，六维度质量检测，持续网络搜索优化，批量章节生成，健康检查与飞书推送",
+  "author": "openclaw",
+  "tags": ["automation", "task-management", "workflow", "scheduling", "document-generation", "git-automation", "research", "content-writing", "24x7", "cron", "batch", "health-check", "quality-detection", "web-optimization", "continuous-improvement"],
+  "dependencies": [],
+  "createdAt": "2026-03-06T00:00:00.000Z",
+  "updatedAt": "2026-03-07T12:00:00.000Z"
+}
