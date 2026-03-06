@@ -73,16 +73,20 @@ metadata:
 7. [安全与可控性](#安全与可控性)
 8. [24/7 持续优化](#247-持续优化)
 9. [六维度质量检测系统](#六维度质量检测系统)
-9. [架构设计](#架构设计)
-10. [任务模型](#任务模型)
-11. [任务配置](#任务配置)
-12. [执行引擎](#执行引擎)
-13. [日志系统](#日志系统)
-14. [失败处理](#失败处理)
-15. [调度机制](#调度机制)
-16. [扩展开发](#扩展开发)
-17. [最佳实践](#最佳实践)
-18. [API 参考](#api-参考)
+10. [持续网络搜索优化](#持续网络搜索优化)
+11. [架构设计](#架构设计)
+12. [任务模型](#任务模型)
+13. [Skill 任务类型](#skill-任务类型)
+14. [任务配置](#任务配置)
+15. [执行引擎](#执行引擎)
+16. [日志系统](#日志系统)
+17. [失败处理](#失败处理)
+18. [调度机制](#调度机制)
+19. [扩展开发](#扩展开发)
+20. [最佳实践](#最佳实践)
+21. [API 参考](#api-参考)
+22. [安装与配置](#安装与配置)
+23. [版本历史](#版本历史)
 
 ---
 
@@ -108,16 +112,19 @@ name: my-first-workflow
 tasks:
   - id: fetch-data
     type: shell
-    command: "curl -o data.json https://api.example.com/data"
+    config:
+      command: "curl -o data.json https://api.example.com/data"
     
   - id: process-data
     type: python
-    script: "scripts/process.py"
+    config:
+      script: "scripts/process.py"
     depends_on: [fetch-data]
     
   - id: notify
     type: webhook
-    url: "https://hooks.example.com/notify"
+    config:
+      url: "https://hooks.example.com/notify"
     depends_on: [process-data]
 ```
 
@@ -532,7 +539,6 @@ git -C /path/to/project checkout HEAD -- .
        │                      │    ├─ 提取新信息 → 合并到章节
        │                      │    └─ 自动 git commit + push
        │                      └─ 5. health_check.py  (后置健康检查)
-       │                      └─ 3. health_check.py  (后置健康检查)
        │
        └──── 每日8AM ────→ agentTurn: 执行 daemon.py --mode health
                                │
@@ -1023,7 +1029,7 @@ tasks:
       output: "${data_dir}/raw.json"
     retry:
       max_attempts: 5
-      delay: 10
+      initial_delay: 10
     timeout: 300
     
   # 任务2：数据验证
@@ -1610,10 +1616,12 @@ tasks:
 
 ## API 参考
 
+> **注意：** 目前仅 `task-run` 和 `task-skills` 已实现。其余命令为计划中功能。
+
 ### 命令行工具
 
 ```bash
-# 执行工作流
+# 执行工作流（已实现）
 task-run <workflow.yaml> [options]
   --dry-run          # 仅验证，不执行
   --vars key=value   # 覆盖变量
@@ -1621,22 +1629,25 @@ task-run <workflow.yaml> [options]
   --timeout N        # 设置超时
   --verbose          # 详细输出
 
-# 查看状态
+# Skill 管理（已实现）
+task-skills list|install|remove
+
+# 查看状态（计划中）
 task-status <run-id>
 
-# 查看历史
+# 查看历史（计划中）
 task-history <workflow-name> [--limit N]
 
-# 查看详情
+# 查看详情（计划中）
 task-detail <run-id>
 
-# 恢复执行
+# 恢复执行（计划中）
 task-resume <run-id> [--from <task-id>] [--skip <task-id>]
 
-# 取消执行
+# 取消执行（计划中）
 task-cancel <run-id>
 
-# 调度管理
+# 调度管理（计划中）
 task-schedule list
 task-schedule enable <workflow>
 task-schedule disable <workflow>
@@ -1678,10 +1689,12 @@ task-graph <workflow.yaml>
 ├── templates/
 │   ├── basic.yaml                  # 基础工作流模板
 │   ├── data-pipeline.yaml          # 数据处理模板
-│   └── doc-automation.yaml         # 文档自动化模板 (新增)
+│   └── (文档自动化模板请参考 workflows/<your-project>/ 目录下的 workflow YAML 文件)
 ├── examples/
 │   ├── simple-workflow.yaml
 │   ├── parallel-processing.yaml
+│   ├── retry-demo.yaml
+│   ├── research-assistant.yaml
 │   └── skill-integration.yaml
 └── workflows/
     └── <your-project>/             # 项目专属工作流目录

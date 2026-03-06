@@ -1,0 +1,112 @@
+# 并行处理工作流示例
+# 演示批处理和并行执行
+
+name: parallel-processing
+version: "1.0"
+description: "并行处理示例 - 批量数据处理"
+
+config:
+  execution:
+    max_parallel: 4
+    timeout: 1800
+
+variables:
+  work_dir: "/tmp/parallel-example"
+  batch_count: 4
+
+tasks:
+  # 初始化
+  - id: init
+    name: "初始化工作目录"
+    type: shell
+    config:
+      command: |
+        mkdir -p ${work_dir}/{input,output,temp}
+        
+        # 生成测试数据
+        for i in 1 2 3 4; do
+          echo "Batch $i data: $(date +%s%N)" > ${work_dir}/input/batch_$i.txt
+        done
+        
+        echo "Created ${batch_count} batch files"
+
+  # 并行处理4个批次
+  - id: batch-1
+    name: "处理批次 1"
+    type: shell
+    config:
+      command: |
+        echo "Processing batch 1..."
+        sleep $(( RANDOM % 5 + 1 ))
+        cat ${work_dir}/input/batch_1.txt | tr '[:lower:]' '[:upper:]' > ${work_dir}/output/batch_1.txt
+        echo "Batch 1 completed"
+    depends_on:
+      - init
+
+  - id: batch-2
+    name: "处理批次 2"
+    type: shell
+    config:
+      command: |
+        echo "Processing batch 2..."
+        sleep $(( RANDOM % 5 + 1 ))
+        cat ${work_dir}/input/batch_2.txt | tr '[:lower:]' '[:upper:]' > ${work_dir}/output/batch_2.txt
+        echo "Batch 2 completed"
+    depends_on:
+      - init
+
+  - id: batch-3
+    name: "处理批次 3"
+    type: shell
+    config:
+      command: |
+        echo "Processing batch 3..."
+        sleep $(( RANDOM % 5 + 1 ))
+        cat ${work_dir}/input/batch_3.txt | tr '[:lower:]' '[:upper:]' > ${work_dir}/output/batch_3.txt
+        echo "Batch 3 completed"
+    depends_on:
+      - init
+
+  - id: batch-4
+    name: "处理批次 4"
+    type: shell
+    config:
+      command: |
+        echo "Processing batch 4..."
+        sleep $(( RANDOM % 5 + 1 ))
+        cat ${work_dir}/input/batch_4.txt | tr '[:lower:]' '[:upper:]' > ${work_dir}/output/batch_4.txt
+        echo "Batch 4 completed"
+    depends_on:
+      - init
+
+  # 合并所有结果
+  - id: merge
+    name: "合并所有批次"
+    type: shell
+    config:
+      command: |
+        echo "Merging all batches..."
+        cat ${work_dir}/output/batch_*.txt > ${work_dir}/output/merged.txt
+        
+        echo "=== Merged Results ==="
+        cat ${work_dir}/output/merged.txt
+        
+        # 统计
+        lines=$(wc -l < ${work_dir}/output/merged.txt)
+        echo "Total lines: $lines"
+    depends_on:
+      - batch-1
+      - batch-2
+      - batch-3
+      - batch-4
+
+  # 清理
+  - id: cleanup
+    name: "清理临时文件"
+    type: shell
+    config:
+      command: |
+        rm -rf ${work_dir}/temp
+        echo "Cleanup completed"
+    depends_on:
+      - merge

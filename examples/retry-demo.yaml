@@ -1,0 +1,100 @@
+# 带重试机制的工作流示例
+# 演示失败重试、超时处理和降级策略
+
+name: retry-example
+version: "1.0"
+description: "重试机制示例 - 演示失败处理"
+
+config:
+  execution:
+    max_parallel: 2
+    timeout: 600
+    retry_policy:
+      max_attempts: 3
+      backoff: exponential
+      initial_delay: 5
+      max_delay: 60
+
+variables:
+  work_dir: "/tmp/retry-example"
+
+tasks:
+  - id: setup
+    name: "设置环境"
+    type: shell
+    config:
+      command: |
+        mkdir -p ${work_dir}
+        echo "0" > ${work_dir}/counter.txt
+
+  # 模拟一个可能失败的任务（前两次失败，第三次成功）
+  - id: flaky-task
+    name: "不稳定任务"
+    type: shell
+    config:
+      command: |
+        # 读取计数器
+        count=$(cat ${work_dir}/counter.txt)
+        count=$((count + 1))
+        echo $count > ${work_dir}/counter.txt
+        
+        echo "Attempt $count"
+        
+        # 前两次失败
+        if [ $count -lt 3 ]; then
+          echo "Simulating failure..."
+          exit 1
+        fi
+        
+        echo "Success on attempt $count!"
+    depends_on:
+      - setup
+    retry:
+      max_attempts: 5
+      backoff: exponential
+      initial_delay: 2
+      max_delay: 30
+    timeout: 30
+
+  # 带超时的任务
+  - id: timeout-demo
+    name: "超时演示（正常完成）"
+    type: shell
+    config:
+      command: |
+        echo "Starting task with timeout..."
+        sleep 5
+        echo "Completed within timeout!"
+    depends_on:
+      - flaky-task
+    timeout: 60
+    retry:
+      max_attempts: 2
+
+  # 继续执行策略演示
+  - id: optional-task
+    name: "可选任务（允许失败）"
+    type: shell
+    config:
+      command: |
+        echo "This task is optional..."
+        # 50% 概率失败
+        if [ $(( RANDOM % 2 )) -eq 0 ]; then
+          echo "Optional task failed"
+          exit 1
+        fi
+        echo "Optional task succeeded"
+    depends_on:
+      - timeout-demo
+    on_failure: continue  # 失败不影响后续任务
+
+  # 最终任务（无论 optional-task 是否成功都会执行）
+  - id: final-task
+    name: "最终任务"
+    type: shell
+    config:
+      command: |
+        echo "Final task executing..."
+        echo "Workflow completed!"
+    depends_on:
+      - optional-task

@@ -1,0 +1,78 @@
+# 使用本地 Skills 的工作流示例
+# 展示如何在工作流中调用 OpenClaw Skills
+
+name: skill-integration-example
+version: "1.0"
+description: "演示如何调用本地 OpenClaw Skills"
+
+config:
+  execution:
+    max_parallel: 2
+    timeout: 600
+
+variables:
+  work_dir: "/tmp/skill-example"
+  search_query: "OpenClaw AI automation"
+
+tasks:
+  # 1. 准备工作目录
+  - id: setup
+    name: "准备环境"
+    type: shell
+    config:
+      command: |
+        mkdir -p ${work_dir}
+        echo "Work directory ready: ${work_dir}"
+
+  # 2. 使用 tavily-search skill 进行网络搜索（如果可用）
+  # 注意：需要设置 TAVILY_API_KEY 环境变量
+  - id: web-search
+    name: "网络搜索"
+    type: skill
+    config:
+      skill_name: "tavily-search"
+      script: "search.mjs"
+      args:
+        - "${search_query}"
+        - "-n"
+        - "5"
+    depends_on:
+      - setup
+    timeout: 60
+    on_failure: continue  # 搜索失败不影响后续任务
+
+  # 3. 使用 shell 任务处理结果
+  - id: process-results
+    name: "处理搜索结果"
+    type: shell
+    config:
+      command: |
+        echo "Search completed"
+        echo "Query: ${search_query}"
+        # 如果搜索成功，结果会在上游任务的输出中
+    depends_on:
+      - web-search
+
+  # 4. 使用 summarize skill（如果可用）
+  # 注意：需要安装 summarize CLI
+  # - id: summarize-url
+  #   name: "总结网页内容"
+  #   type: skill
+  #   config:
+  #     skill_name: "summarize"
+  #     command: "summarize https://example.com --length short"
+  #   depends_on:
+  #     - setup
+  #   timeout: 120
+  #   on_failure: continue
+
+  # 5. 完成
+  - id: finish
+    name: "完成"
+    type: shell
+    config:
+      command: |
+        echo "Workflow completed!"
+        echo "Results saved to: ${work_dir}"
+    depends_on:
+      - process-results

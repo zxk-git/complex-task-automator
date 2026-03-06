@@ -1,0 +1,78 @@
+# 基础工作流模板
+# 复制此文件并根据需要修改
+
+name: my-workflow
+version: "1.0"
+description: "描述你的工作流"
+
+# 全局配置
+config:
+  execution:
+    max_parallel: 5          # 最大并行任务数
+    timeout: 3600            # 全局超时（秒）
+    retry_policy:
+      max_attempts: 3
+      backoff: exponential
+      initial_delay: 5
+      max_delay: 300
+
+# 变量定义（可通过 --vars 覆盖）
+variables:
+  input_dir: "/data/input"
+  output_dir: "/data/output"
+
+# 任务列表
+tasks:
+  # 示例任务1：Shell 命令
+  - id: task-1
+    name: "准备环境"
+    type: shell
+    config:
+      command: "mkdir -p ${output_dir}"
+    
+  # 示例任务2：带依赖的任务
+  - id: task-2
+    name: "处理数据"
+    type: shell
+    config:
+      command: "echo 'Processing...' && sleep 2"
+    depends_on:
+      - task-1
+    retry:
+      max_attempts: 3
+      backoff: exponential
+      initial_delay: 5
+    timeout: 60
+    
+  # 示例任务3：HTTP 请求
+  # - id: api-call
+  #   name: "调用 API"
+  #   type: http
+  #   config:
+  #     method: GET
+  #     url: "https://api.example.com/data"
+  #     headers:
+  #       Authorization: "Bearer ${API_TOKEN}"
+  #   depends_on:
+  #     - task-2
+    
+  # 示例任务4：Python 脚本
+  # - id: analyze
+  #   name: "数据分析"
+  #   type: python
+  #   config:
+  #     script: "scripts/analyze.py"
+  #     args:
+  #       - "--input"
+  #       - "${input_dir}/data.json"
+  #   depends_on:
+  #     - api-call
+
+# 钩子（可选）
+# hooks:
+#   pre_run:
+#     - type: shell
+#       command: "echo 'Starting workflow...'"
+#   post_run:
+#     - type: shell
+#       command: "echo 'Workflow completed'"

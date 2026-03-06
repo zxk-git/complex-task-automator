@@ -1,0 +1,218 @@
+# 数据处理流水线模板
+# 适用于 ETL、数据分析等场景
+
+name: data-processing-pipeline
+version: "1.0"
+description: "数据处理流水线 - 获取、验证、处理、合并、输出"
+
+config:
+  execution:
+    max_parallel: 5
+    timeout: 7200            # 2小时超时
+    retry_policy:
+      max_attempts: 3
+      backoff: exponential
+      initial_delay: 10
+      max_delay: 600
+
+  # 调度配置（可选）
+  # schedule:
+  #   type: cron
+  #   cron: "0 2 * * *"      # 每天凌晨2点
+  #   timezone: "Asia/Shanghai"
+
+  notifications:
+    on_start: true
+    on_complete: true
+    on_failure: true
+    channels:
+      - type: webhook
+        url: "${NOTIFY_WEBHOOK}"
+
+variables:
+  data_source: "https://api.example.com/data"
+  data_dir: "/data/pipeline"
+  output_dir: "/data/output"
+  batch_size: 1000
+
+tasks:
+  # 阶段1：准备
+  - id: prepare
+    name: "准备工作目录"
+    type: shell
+    config:
+      command: |
+        mkdir -p ${data_dir}/{raw,processed,temp}
+        mkdir -p ${output_dir}
+        echo "Directories prepared"
+
+  # 阶段2：数据获取
+  - id: fetch-data
+    name: "获取源数据"
+    type: http
+    config:
+      method: GET
+      url: "${data_source}"
+      headers:
+        Authorization: "Bearer ${API_TOKEN}"
+        Accept: "application/json"
+      output: "${data_dir}/raw/data.json"
+    depends_on:
+      - prepare
+    retry:
+      max_attempts: 5
+      backoff: exponential
+      initial_delay: 10
+    timeout: 300
+    on_failure: abort
+
+  # 阶段3：数据验证
+  - id: validate-data
+    name: "验证数据完整性"
+    type: python
+    config:
+      script: "scripts/validate_data.py"
+      args:
+        - "--input"
+        - "${data_dir}/raw/data.json"
+        - "--schema"
+        - "schemas/data_schema.json"
+    depends_on:
+      - fetch-data
+    on_failure: abort
+
+  # 阶段4：并行处理（分片处理，提高效率）
+  - id: process-shard-1
+    name: "处理分片1"
+    type: shell
+    config:
+      command: |
+        python scripts/process_data.py \
+          --input ${data_dir}/raw/data.json \
+          --output ${data_dir}/processed/shard_1.json \
+          --shard 1 \
+          --total-shards 3
+    depends_on:
+      - validate-data
+    retry:
+      max_attempts: 2
+    timeout: 1800
+
+  - id: process-shard-2
+    name: "处理分片2"
+    type: shell
+    config:
+      command: |
+        python scripts/process_data.py \
+          --input ${data_dir}/raw/data.json \
+          --output ${data_dir}/processed/shard_2.json \
+          --shard 2 \
+          --total-shards 3
+    depends_on:
+      - validate-data
+    retry:
+      max_attempts: 2
+    timeout: 1800
+
+  - id: process-shard-3
+    name: "处理分片3"
+    type: shell
+    config:
+      command: |
+        python scripts/process_data.py \
+          --input ${data_dir}/raw/data.json \
+          --output ${data_dir}/processed/shard_3.json \
+          --shard 3 \
+          --total-shards 3
+    depends_on:
+      - validate-data
+    retry:
+      max_attempts: 2
+    timeout: 1800
+
+  # 阶段5：合并结果
+  - id: merge-results
+    name: "合并处理结果"
+    type: python
+    config:
+      script: "scripts/merge_results.py"
+      args:
+        - "--input-dir"
+        - "${data_dir}/processed"
+        - "--output"
+        - "${output_dir}/merged_data.json"
+        - "--stats"
+        - "${output_dir}/processing_stats.json"
+    depends_on:
+      - process-shard-1
+      - process-shard-2
+      - process-shard-3
+    timeout: 600
+
+  # 阶段6：质量检查
+  - id: quality-check
+    name: "结果质量检查"
+    type: python
+    config:
+      script: "scripts/quality_check.py"
+      args:
+        - "--input"
+        - "${output_dir}/merged_data.json"
+        - "--threshold"
+        - "0.95"
+    depends_on:
+      - merge-results
+    on_failure: continue  # 质量检查失败不影响流程
+
+  # 阶段7：生成报告
+  - id: generate-report
+    name: "生成处理报告"
+    type: shell
+    config:
+      command: |
+        python scripts/generate_report.py \
+          --stats ${output_dir}/processing_stats.json \
+          --output ${output_dir}/report.html
+    depends_on:
+      - quality-check
+
+  # 阶段8：清理临时文件
+  - id: cleanup
+    name: "清理临时文件"
+    type: shell
+    config:
+      command: |
+        rm -rf ${data_dir}/temp
+        echo "Cleanup completed"
+    depends_on:
+      - generate-report
+    on_failure: continue
+
+  # 阶段9：发送通知
+  - id: notify-success
+    name: "发送成功通知"
+    type: webhook
+    config:
+      url: "${NOTIFY_WEBHOOK}"
+      method: POST
+      body:
+        type: "pipeline_complete"
+        pipeline: "data-processing"
+        status: "success"
+        stats: "{{ result.merge-results.output }}"
+    depends_on:
+      - cleanup
+    on_failure: continue
+
+hooks:
+  pre_run:
+    - type: shell
+      command: "echo 'Pipeline starting at $(date)'"
+  
+  post_run:
+    - type: shell
+      command: "echo 'Pipeline finished at $(date)'"
+  
+  on_failure:
+    - type: webhook
+      url: "${ALERT_WEBHOOK}"

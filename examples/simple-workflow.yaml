@@ -1,0 +1,77 @@
+# 简单工作流示例
+# 演示基本的任务定义、依赖关系和并行执行
+
+name: simple-example
+version: "1.0"
+description: "简单工作流示例 - 演示基础功能"
+
+config:
+  execution:
+    max_parallel: 3
+    timeout: 300
+
+variables:
+  message: "Hello from Task Automator!"
+  work_dir: "/tmp/task-example"
+
+tasks:
+  # 任务1：初始化
+  - id: init
+    name: "初始化"
+    type: shell
+    config:
+      command: |
+        mkdir -p ${work_dir}
+        echo "Work directory created: ${work_dir}"
+        date > ${work_dir}/start_time.txt
+
+  # 任务2和3：并行执行（都只依赖 init）
+  - id: task-a
+    name: "任务 A"
+    type: shell
+    config:
+      command: |
+        echo "Running Task A..."
+        sleep 2
+        echo "A completed" > ${work_dir}/task_a.txt
+        echo "Task A done!"
+    depends_on:
+      - init
+
+  - id: task-b
+    name: "任务 B"
+    type: shell
+    config:
+      command: |
+        echo "Running Task B..."
+        sleep 3
+        echo "B completed" > ${work_dir}/task_b.txt
+        echo "Task B done!"
+    depends_on:
+      - init
+
+  # 任务4：合并（依赖 A 和 B）
+  - id: merge
+    name: "合并结果"
+    type: shell
+    config:
+      command: |
+        echo "Merging results..."
+        cat ${work_dir}/task_a.txt ${work_dir}/task_b.txt > ${work_dir}/merged.txt
+        echo "Merged content:"
+        cat ${work_dir}/merged.txt
+    depends_on:
+      - task-a
+      - task-b
+
+  # 任务5：完成
+  - id: finish
+    name: "完成"
+    type: shell
+    config:
+      command: |
+        echo "${message}"
+        date > ${work_dir}/end_time.txt
+        echo "Workflow completed successfully!"
+    depends_on:
+      - merge

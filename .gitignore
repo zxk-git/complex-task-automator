@@ -1,6 +1,15 @@
 __pycache__/
 *.pyc
 *.pyo
+*.bak
 .task-logs/
+.task-config/
 checkpoints/
 *.log
+*.egg-info/
+.pytest_cache/
+*.swp
+*.swo
+batch-state.json
+research-cache/
+optimize-history.json
