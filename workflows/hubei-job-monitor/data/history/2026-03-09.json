@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-03-09T05:56:34.775284",
+  "timestamp": "2026-03-09T06:10:33.337872",
   "date": "2026-03-09",
   "pipeline": {
     "scrape": {
@@ -8,20 +8,20 @@
     },
     "filter": {
       "input": 7,
-      "matched": 4
+      "matched": 6
     },
     "dedup": {
-      "input": 4,
-      "new": 0,
-      "duplicate": 4
+      "input": 6,
+      "new": 6,
+      "duplicate": 0
     },
     "notify": {
-      "pushed": false,
-      "items_sent": 0
+      "pushed": true,
+      "items_sent": 6
     }
   },
   "stats": {
-    "total_seen_all_time": 4
+    "total_seen_all_time": 6
   },
   "ok": true
 }

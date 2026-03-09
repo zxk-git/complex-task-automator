@@ -17,12 +17,18 @@ DELIVERY_QUEUE_DIR = Path.home() / ".openclaw" / "delivery-queue"
 
 
 def format_message(items: list) -> str:
-    """格式化飞书推送消息"""
+    """格式化飞书推送消息（含 Excel 岗位详情）"""
     if not items:
         return ""
 
+    # 统计 Excel 岗位总数
+    total_excel = sum(len(item.get("excel_jobs", [])) for item in items)
+
     lines = [f"📋 **湖北招聘硕士岗位监控** — {now_iso()[:10]}\n"]
-    lines.append(f"发现 **{len(items)}** 条新岗位：\n")
+    if total_excel > 0:
+        lines.append(f"发现 **{len(items)}** 条新公告，含 **{total_excel}** 个硕士岗位\n")
+    else:
+        lines.append(f"发现 **{len(items)}** 条新岗位\n")
 
     # 按数据源分组
     by_source = {}
@@ -31,7 +37,8 @@ def format_message(items: list) -> str:
         by_source.setdefault(src, []).append(item)
 
     for source, source_items in by_source.items():
-        lines.append(f"\n🏢 **{source}** ({len(source_items)} 条)")
+        lines.append(f"\n🏢 **{source}** ({len(source_items)} 条)\n")
+
         for i, item in enumerate(source_items, 1):
             title = item["title"]
             url = item.get("url", "")
@@ -39,11 +46,58 @@ def format_message(items: list) -> str:
             date_str = f" ({date})" if date else ""
 
             if url:
-                lines.append(f"  {i}. [{title}]({url}){date_str}")
+                lines.append(f"**{i}. [{title}]({url}){date_str}**")
             else:
-                lines.append(f"  {i}. {title}{date_str}")
+                lines.append(f"**{i}. {title}{date_str}**")
 
-    lines.append(f"\n---\n🤖 自动监控 · 每日 05:00 更新")
+            # 如果有 Excel 解析的岗位信息，展示详情
+            excel_jobs = item.get("excel_jobs", [])
+            if excel_jobs:
+                # 按招聘单位分组（优先使用 employer_display）
+                by_employer = {}
+                for job in excel_jobs:
+                    emp = job.get("employer_display", "") or job.get("employer", "未知单位")
+                    by_employer.setdefault(emp, []).append(job)
+
+                show_limit = cfg("notify.max_jobs_per_announcement", 10)
+                shown = 0
+
+                for emp, emp_jobs in by_employer.items():
+                    if shown >= show_limit:
+                        remaining = sum(len(v) for v in list(by_employer.values())[list(by_employer.keys()).index(emp):])
+                        lines.append(f"  ... 还有 {remaining} 个岗位")
+                        break
+
+                    # 显示单位名称
+                    display_emp = emp
+
+                    lines.append(f"  📍 **{display_emp}** ({len(emp_jobs)} 个岗位)")
+                    for job in emp_jobs[:max(3, show_limit - shown)]:
+                        pos = job.get("position", "—")
+                        edu = job.get("education", "")
+                        num = job.get("headcount", "")
+                        major = job.get("major", "")
+
+                        detail_parts = []
+                        if num:
+                            detail_parts.append(f"{num}人")
+                        if edu:
+                            detail_parts.append(edu)
+                        if major:
+                            if len(major) > 30:
+                                major = major[:30] + "..."
+                            detail_parts.append(major)
+
+                        detail = " · ".join(detail_parts)
+                        lines.append(f"    - {pos}" + (f" [{detail}]" if detail else ""))
+                        shown += 1
+
+                    if len(emp_jobs) > max(3, show_limit - shown):
+                        lines.append(f"    - ... 等 {len(emp_jobs)} 个岗位")
+
+                lines.append("")
+
+    lines.append(f"---\n🤖 自动监控 · 每日 05:00 更新")
     return "\n".join(lines)
 
 

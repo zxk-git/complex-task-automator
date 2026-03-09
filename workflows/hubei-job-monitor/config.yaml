@@ -88,6 +88,8 @@ notify:
   chat_id: "oc_d618ee5b611928489deeccc66535a1e6"
   # 每次最多推送条数（防刷屏）
   max_items_per_push: 20
+  # 每条公告最多展示多少个 Excel 岗位
+  max_jobs_per_announcement: 10
   # 无新岗位时是否推送"无更新"消息
   notify_empty: false
 
