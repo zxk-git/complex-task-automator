@@ -1,0 +1,87 @@
+# ═══════════════════════════════════════════════════════
+# 湖北招聘硕士岗位监控 — 工作流定义
+# ═══════════════════════════════════════════════════════
+name: hubei-job-monitor
+version: "1.0"
+description: "每日监控湖北招聘网站，筛选硕士岗位，推送到飞书群"
+
+variables:
+  SCRIPTS_DIR: /root/.openclaw/workspace/skills/complex-task-automator/workflows/hubei-job-monitor/scripts
+  CONFIG_FILE: /root/.openclaw/workspace/skills/complex-task-automator/workflows/hubei-job-monitor/config.yaml
+  DATA_DIR: /root/.openclaw/workspace/skills/complex-task-automator/workflows/hubei-job-monitor/data
+  OUTPUT_DIR: /tmp/hubei-job-monitor-reports
+
+config:
+  execution:
+    max_parallel: 1
+    timeout: 300
+  schedule:
+    type: cron
+    cron: "0 5 * * *"
+    timezone: "Asia/Shanghai"
+
+tasks:
+  # Stage 1: 抓取各数据源公告列表
+  - id: scrape
+    name: "抓取招聘公告列表"
+    type: python
+    config:
+      script: "${SCRIPTS_DIR}/scraper.py"
+      env:
+        CONFIG_FILE: "${CONFIG_FILE}"
+        OUTPUT_DIR: "${OUTPUT_DIR}"
+    timeout: 120
+    retry:
+      max_attempts: 2
+      delay: 10
+
+  # Stage 2: 筛选硕士岗位
+  - id: filter
+    name: "筛选硕士学历岗位"
+    type: python
+    config:
+      script: "${SCRIPTS_DIR}/filter_jobs.py"
+      env:
+        CONFIG_FILE: "${CONFIG_FILE}"
+        OUTPUT_DIR: "${OUTPUT_DIR}"
+    depends_on: [scrape]
+    timeout: 60
+
+  # Stage 3: 去重
+  - id: dedup
+    name: "去重（排除已推送）"
+    type: python
+    config:
+      script: "${SCRIPTS_DIR}/dedup.py"
+      env:
+        CONFIG_FILE: "${CONFIG_FILE}"
+        OUTPUT_DIR: "${OUTPUT_DIR}"
+        DATA_DIR: "${DATA_DIR}"
+    depends_on: [filter]
+    timeout: 30
+
+  # Stage 4: 飞书推送
+  - id: notify
+    name: "推送到飞书群"
+    type: python
+    config:
+      script: "${SCRIPTS_DIR}/notify.py"
+      env:
+        CONFIG_FILE: "${CONFIG_FILE}"
+        OUTPUT_DIR: "${OUTPUT_DIR}"
+        DATA_DIR: "${DATA_DIR}"
+    depends_on: [dedup]
+    timeout: 60
+
+  # Stage 5: 归档报告
+  - id: report
+    name: "生成监控报告"
+    type: python
+    config:
+      script: "${SCRIPTS_DIR}/report.py"
+      env:
+        CONFIG_FILE: "${CONFIG_FILE}"
+        OUTPUT_DIR: "${OUTPUT_DIR}"
+        DATA_DIR: "${DATA_DIR}"
+    depends_on: [notify]
+    timeout: 30

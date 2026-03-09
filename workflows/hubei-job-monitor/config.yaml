@@ -1,0 +1,105 @@
+# ═══════════════════════════════════════════════════════
+# 湖北招聘硕士岗位监控 — 统一配置
+# ═══════════════════════════════════════════════════════
+
+# ── 数据源 ──────────────────────────────────────────
+# 每个数据源包含: id, name, url, type, enabled
+# type: list_page | rss | api
+# 新增数据源只需追加到此列表
+sources:
+  # ① 湖北人社厅 — 事业单位公开招聘（主页，公告更全）
+  - id: hubei-rst
+    name: 湖北省人力资源和社会保障厅
+    url: https://rst.hubei.gov.cn/bmdt/ztzl/ywzl/hbsszsydwgkzp/
+    type: list_page
+    enabled: true
+    selectors:
+      list: ".list_content li"
+      link: "a"
+      date: "span"
+    # 过滤：只保留 zpgg 路径的链接（招聘公告）
+    url_filter: "/zpgg/"
+    base_url: https://rst.hubei.gov.cn
+
+  # ② 高校人才网 — 湖北高校招聘（403反爬，暂禁用）
+  - id: gaoxiaojob
+    name: 高校人才网-湖北
+    url: http://www.gaoxiaojob.com/zhaopin/hubei/
+    type: list_page
+    enabled: false
+    selectors:
+      list: ".newsList li, .list-item, .news_list li"
+      link: "a"
+      date: "span.date, .time"
+    base_url: http://www.gaoxiaojob.com
+
+  # ③ 中国博士人才网 — 湖北硕博招聘（JS反爬验证，暂禁用）
+  - id: bosshi
+    name: 中国博士人才网-湖北
+    url: https://www.91boshi.net/hubei/
+    type: list_page
+    enabled: false
+    selectors:
+      list: ".newsList li, .list-item, ul.zhaopin li"
+      link: "a"
+      date: "span, .date"
+    base_url: https://www.91boshi.net
+
+  # ④ 湖北高校官网（示例: 三峡大学）
+  - id: ctgu
+    name: 三峡大学人事处
+    url: https://rsc.ctgu.edu.cn/zpxx.htm
+    type: list_page
+    enabled: false  # 需确认URL可访问后启用
+    selectors:
+      list: ".list li, .news_list li, ul.listR li"
+      link: "a"
+      date: "span, .date"
+    base_url: https://rsc.ctgu.edu.cn
+
+# ── 筛选条件 ──────────────────────────────────────
+filter:
+  # 学历关键词（标题或正文包含即匹配）
+  education_keywords:
+    - 硕士
+    - 研究生
+  # 排除关键词（标题包含则跳过）
+  exclude_keywords:
+    - 博士后
+    - 辅导员招聘  # 通常只要本科
+  # 地域关键词（可选，为空则不过滤）
+  region_keywords: []
+  # 专业关键词（可选）
+  major_keywords: []
+
+# ── 去重 ───────────────────────────────────────────
+dedup:
+  # 已推送记录保留天数
+  retention_days: 90
+  # 状态文件路径（相对于 data_dir）
+  state_file: seen.json
+
+# ── 推送 ───────────────────────────────────────────
+notify:
+  # 飞书推送
+  channel: feishu
+  account: default
+  # 推送到的群聊 ID
+  chat_id: "oc_d618ee5b611928489deeccc66535a1e6"
+  # 每次最多推送条数（防刷屏）
+  max_items_per_push: 20
+  # 无新岗位时是否推送"无更新"消息
+  notify_empty: false
+
+# ── 路径 ───────────────────────────────────────────
+data_dir: /root/.openclaw/workspace/skills/complex-task-automator/workflows/hubei-job-monitor/data
+output_dir: /tmp/hubei-job-monitor-reports
+
+# ── 网络 ───────────────────────────────────────────
+http:
+  timeout: 30
+  retry: 2
+  user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Safari/537.36"
+
+# ── 日志 ───────────────────────────────────────────
+log_level: INFO
