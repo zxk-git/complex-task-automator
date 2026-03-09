@@ -15,6 +15,7 @@ from datetime import datetime
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from utils import cfg, get_output_dir, setup_logger, save_json, load_json, now_iso
+from feishu_doc import create_job_report
 
 log = setup_logger("notify")
 
@@ -400,18 +401,24 @@ def run():
         # 少量岗位：直接推送详情
         message = format_message(dedup_data)
     else:
-        # 大量岗位：生成 Markdown 报告 + 推送到 GitHub
-        today = now_iso()[:10]
-        filename = f"{today}.md"
-        md_content = generate_report_md(dedup_data)
-        report_url = push_report_to_github(md_content, filename)
+        # 大量岗位：生成飞书云文档 + 推送摘要链接
+        report_url = create_job_report(dedup_data)
 
         if report_url:
             message = format_summary_with_link(dedup_data, report_url)
         else:
-            # GitHub 推送失败，降级为内联模式
-            log.warning("云文档推送失败，降级为内联模式")
-            message = format_message(dedup_data)
+            # 飞书文档创建失败，尝试 GitHub Markdown 降级
+            log.warning("飞书云文档创建失败，尝试 GitHub Markdown 降级")
+            today = now_iso()[:10]
+            filename = f"{today}.md"
+            md_content = generate_report_md(dedup_data)
+            report_url = push_report_to_github(md_content, filename)
+            if report_url:
+                message = format_summary_with_link(dedup_data, report_url)
+            else:
+                # 双重降级：直接内联推送
+                log.warning("降级为内联模式")
+                message = format_message(dedup_data)
 
     success = deliver_to_feishu(message)
 
