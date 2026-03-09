@@ -57,6 +57,20 @@ sources:
       date: "span, .date"
     base_url: https://rsc.ctgu.edu.cn
 
+  # ⑤ 事业单位招聘网 — 湖北事业编招聘汇总
+  - id: shiyebian
+    name: 事业单位招聘网-湖北
+    url: https://www.shiyebian.net/hubei/
+    type: list_page
+    enabled: true
+    selectors:
+      list: "ul.list li"
+      link: "a"
+      date: "span"
+    base_url: https://www.shiyebian.net
+    max_items: 70             # 全量扫描标题（不多，70条）
+    detail_mode: title_match  # 仅标题匹配学历关键词时抓取详情页
+
 # ── 筛选条件 ──────────────────────────────────────
 filter:
   # 学历关键词（标题或正文包含即匹配）

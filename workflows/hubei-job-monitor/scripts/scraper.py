@@ -56,7 +56,8 @@ def scrape_list_page(source: dict, session) -> list:
         log.debug("[%s] 使用回退策略，找到 %d 个元素", source["id"], len(items))
 
     results = []
-    for item in items[:50]:  # 最多处理 50 条
+    max_items = source.get("max_items", 50)
+    for item in items[:max_items]:
         link_el = item.select_one(selectors.get("link", "a"))
         if not link_el:
             continue
@@ -172,9 +173,20 @@ def run():
             log.warning("不支持的数据源类型: %s", source_type)
             items = []
 
-        # 对每条公告抓取详情（如果有 URL）
+        # 对每条公告抓取详情（根据 detail_mode 策略）
+        detail_mode = source.get("detail_mode", "all")
+        edu_keywords = cfg("filter.education_keywords", ["硕士", "研究生"])
+
         for item in items:
-            if item.get("url"):
+            should_fetch = False
+            if detail_mode == "all":
+                should_fetch = bool(item.get("url"))
+            elif detail_mode == "title_match":
+                title = item.get("title", "")
+                should_fetch = any(kw in title for kw in edu_keywords) or "人才引进" in title
+            # detail_mode == "none" → never fetch
+
+            if should_fetch:
                 detail = scrape_detail_page(item["url"], session)
                 item["detail_text"] = detail["text"]
                 item["attachments"] = detail["attachments"]
