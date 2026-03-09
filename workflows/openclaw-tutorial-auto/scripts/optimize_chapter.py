@@ -6,6 +6,7 @@ optimize_chapter.py — 基于网络最新信息优化已有章节
 import os
 import sys
 import re
+import json
 import time
 import shutil
 import subprocess
@@ -417,7 +418,7 @@ def run():
     parser.add_argument("--all", action="store_true", help="优化所有章节")
     parser.add_argument("--max-chapters", type=int, default=3, help="最多优化章节数")
     parser.add_argument("--dry-run", action="store_true", help="空运行")
-    args = parser.parse_args()
+    args, _ = parser.parse_known_args()  # 允许忽略 daemon 传递的额外参数
 
     global DRY_RUN
     if args.dry_run:

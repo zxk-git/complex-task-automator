@@ -138,30 +138,10 @@ tasks:
         # 读取优化结果
         if [ -f "${OUTPUT_DIR}/optimize-result.json" ]; then
           echo "--- 优化结果 ---"
-          cat "${OUTPUT_DIR}/optimize-result.json" | python3 -c "
-import sys,json
-data=json.load(sys.stdin)
-print(f\"  优化章节数: {data.get('optimized', 0)}\")
-print(f\"  检查章节数: {data.get('total_checked', 0)}\")
-for r in data.get('results', []):
-    ch = r.get('chapter', '?')
-    st = r.get('status', '?')
-    before = r.get('before', {}).get('word_count', '-')
-    after = r.get('after', {}).get('word_count', '-')
-    if st == 'optimized':
-        print(f\"  ✅ 第{ch}章: {before} → {after} 字\")
-    elif st == 'no_update':
-        print(f\"  ℹ️  第{ch}章: 无需更新\")
-    else:
-        print(f\"  ⏭️  第{ch}章: {st}\")
-" 2>/dev/null || echo "  (无法解析结果)"
+          cat "${OUTPUT_DIR}/optimize-result.json" | python3 -c "import sys, json; data=json.load(sys.stdin); print(f\"优化章节: {data.get('optimized_chapters', [])}\"); print(f\"新增内容: {data.get('new_content_summary', '无')}\")"
         else
-          echo "  (无优化结果文件)"
+          echo "未找到优化结果文件。"
         fi
-
-        echo ""
-        echo "⏰ 完成时间: $(date '+%Y-%m-%d %H:%M:%S')"
-        echo "📅 下一次优化: 约6小时后"
       env:
         OUTPUT_DIR: "${OUTPUT_DIR}"
     depends_on: [git-push]

@@ -24,12 +24,6 @@ python3 scripts/task-run.py examples/simple-workflow.yaml
 # 文档自动化 — 全链路执行（搜集→编写→质检→提交→报告）
 python3 scripts/task-run.py workflows/openclaw-tutorial-auto/workflow-full.yaml
 
-# 指定章节号
-python3 scripts/task-run.py workflows/openclaw-tutorial-auto/workflow-full.yaml --vars CHAPTER_NUM=5
-
-# 试运行（不实际写入文件）
-python3 scripts/task-run.py workflows/openclaw-tutorial-auto/workflow-full.yaml --vars DRY_RUN=true
-
 # 持续优化模式
 python3 scripts/task-run.py workflows/openclaw-tutorial-auto/workflow-optimize.yaml
 
