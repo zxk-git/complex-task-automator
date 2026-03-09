@@ -322,7 +322,7 @@ def run_git(args: list[str], cwd: str = None) -> dict:
         )
         return {
             "ok": result.returncode == 0,
-            "stdout": result.stdout.strip(),
+            "stdout": result.stdout.rstrip(),
             "stderr": result.stderr.strip(),
             "code": result.returncode,
         }

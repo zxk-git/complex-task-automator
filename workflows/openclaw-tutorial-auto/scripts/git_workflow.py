@@ -175,13 +175,15 @@ def safe_commit(proj_dir: str, changes: list) -> dict:
 
     # Stage 安全文件
     for f in safe_files:
-        run_git(["add", f], proj_dir)
+        add_result = run_git(["add", f], proj_dir)
+        if not add_result["ok"]:
+            log.warning("git add 失败: %s → %s", f, add_result["stderr"])
 
     message = generate_commit_message(changes)
     result = run_git(["commit", "-m", message], proj_dir)
     if result["ok"]:
         hash_result = run_git(["rev-parse", "--short", "HEAD"], proj_dir)
-        commit_hash = hash_result["stdout"] if hash_result["ok"] else "unknown"
+        commit_hash = hash_result["stdout"].strip() if hash_result["ok"] else "unknown"
         log.info("已提交 %d 个文件 [%s] %s", len(safe_files), commit_hash, message)
         return {
             "action": "committed",
@@ -191,11 +193,11 @@ def safe_commit(proj_dir: str, changes: list) -> dict:
             "files": safe_files,
         }
 
-    log.error("提交失败: %s", result["stderr"])
+    log.error("提交失败: %s", result["stderr"] or result["stdout"])
     return {
         "action": "commit_failed",
         "ok": False,
-        "error": result["stderr"],
+        "error": result["stderr"] or result["stdout"],
         "files": safe_files,
     }
 
