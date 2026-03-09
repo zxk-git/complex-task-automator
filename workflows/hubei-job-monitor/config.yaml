@@ -157,6 +157,9 @@ notify:
   max_jobs_per_employer: 4
   # 全部岗位最多展示多少个
   max_jobs_total: 60
+  # 超过此数量的工科岗位，改为生成云文档（GitHub Markdown）
+  # 少于等于此值：飞书直接推送详情
+  inline_threshold: 15
   # 无新岗位时是否推送"无更新"消息
   notify_empty: false
 
