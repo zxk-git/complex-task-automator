@@ -201,25 +201,26 @@ def safe_commit(proj_dir: str, changes: list) -> dict:
 
 
 def push_remote(proj_dir: str) -> dict:
-    """推送到远程（使用配置的 remote name，不再动态创建 remote）"""
+    """推送到远程（使用配置的 remote name，支持已有 remote 回退）"""
     remote_url = get_git_remote()
-    if not remote_url:
-        log.info("未配置远程仓库，跳过推送")
-        return {"action": "skip", "reason": "no_remote_configured"}
-
     remote_name = get_git_remote_name()
 
     # 确认 remote 存在
     check = run_git(["remote", "get-url", remote_name], proj_dir)
+
     if not check["ok"]:
-        # remote 不存在，尝试添加
+        # remote 不存在
+        if not remote_url:
+            log.info("未配置远程仓库且 remote '%s' 不存在，跳过推送", remote_name)
+            return {"action": "skip", "reason": "no_remote_configured"}
+        # 用 remote_url 创建
         add_result = run_git(["remote", "add", remote_name, remote_url], proj_dir)
         if not add_result["ok"]:
             log.error("添加远程 %s 失败: %s", remote_name, add_result["stderr"])
             return {"action": "add_remote_failed", "ok": False, "error": add_result["stderr"]}
         log.info("已添加远程 %s → %s", remote_name, remote_url)
-    else:
-        # remote 存在但 URL 可能不同，确保一致
+    elif remote_url:
+        # remote 存在且配置了 URL，确保一致
         current_url = check["stdout"]
         if current_url != remote_url:
             run_git(["remote", "set-url", remote_name, remote_url], proj_dir)

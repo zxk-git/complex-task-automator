@@ -16,7 +16,7 @@ variables:
   OUTPUT_DIR: /tmp/openclaw-tutorial-auto-reports
   SCRIPTS_DIR: /root/.openclaw/workspace/skills/complex-task-automator/workflows/openclaw-tutorial-auto/scripts
   DRY_RUN: "false"
-  GIT_REMOTE: ""                 # 从 config.yaml 读取
+  GIT_REMOTE: "https://github.com/zxk-git/openclaw-tutorial-auto.git"
   MAX_CHAPTERS_PER_RUN: "3"
   MIN_OPTIMIZE_INTERVAL_HOURS: "12"
 

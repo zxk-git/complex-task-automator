@@ -46,7 +46,7 @@ search:
 git:
   auto_commit: true
   branch: main
-  remote_url: ""                    # 留空则不自动推送
+  remote_url: "https://github.com/zxk-git/openclaw-tutorial-auto.git"
   remote_name: zxk                  # git remote 名称
   safe_patterns:                    # 允许自动提交的文件模式
     - ".*\\.md$"
