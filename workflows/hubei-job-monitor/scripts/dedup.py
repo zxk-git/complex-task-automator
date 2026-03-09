@@ -37,7 +37,7 @@ def run():
         log.info("清理 %d 条过期记录", len(seen_jobs) - len(cleaned))
         seen_jobs = cleaned
 
-    # 去重
+    # 去重（公告级）
     new_items = []
     for item in items:
         job_id = make_job_id(item["source_id"], item["title"], item.get("url", ""))
@@ -45,12 +45,22 @@ def run():
             item["_job_id"] = job_id
             new_items.append(item)
 
+    # 去重（岗位级，matched_jobs 跟随公告去重）
+    matched_jobs = filter_data.get("matched_jobs", [])
+    new_titles = {item["title"] for item in new_items}
+    new_matched_jobs = [
+        job for job in matched_jobs
+        if job.get("_announcement_title", "") in new_titles
+    ]
+
     result = {
         "timestamp": now_iso(),
         "input_count": len(items),
         "new_count": len(new_items),
         "duplicate_count": len(items) - len(new_items),
         "items": new_items,
+        "matched_jobs": new_matched_jobs,
+        "matched_jobs_count": len(new_matched_jobs),
     }
 
     save_json(Path(out_dir) / "dedup-result.json", result)

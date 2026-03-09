@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
 """
-湖北招聘监控 — 硕士岗位筛选
-从 scrape-result.json 中筛选匹配学历要求的公告。
+湖北招聘监控 — 硕士岗位筛选 + 工科专业匹配
+两级筛选：
+  1. 公告级：学历关键词筛选（标题/正文含硕士/研究生）
+  2. 岗位级：从 Excel 岗位表按专业关键词匹配具体岗位
+输出 filter-result.json:
+  - items: 匹配的公告（含 excel_jobs）
+  - matched_jobs: 专业匹配的具体岗位列表（用于推送）
 """
 import re
 import sys
@@ -22,22 +27,14 @@ def matches_education(item: dict) -> bool:
     text = item.get("detail_text", "")
     combined = f"{title} {text}"
 
-    # 排除检查
     for kw in exclude:
         if kw in title:
             return False
 
-    # 标题匹配（高优先级）
     for kw in keywords:
-        if kw in title:
+        if kw in title or kw in text:
             return True
 
-    # 正文匹配
-    for kw in keywords:
-        if kw in text:
-            return True
-
-    # 特征模式匹配：学历要求字段中出现硕士/研究生
     edu_patterns = [
         r"学历[^\n]{0,10}(硕士|研究生)",
         r"(硕士|研究生)[^\n]{0,10}(及以上|以上|学历|学位)",
@@ -52,49 +49,29 @@ def matches_education(item: dict) -> bool:
 
 
 def matches_region(item: dict) -> bool:
-    """地域过滤（如果配置了地域关键词）"""
+    """地域过滤"""
     keywords = cfg("filter.region_keywords", [])
     if not keywords:
-        return True  # 未配置则不过滤
-
-    title = item.get("title", "")
-    text = item.get("detail_text", "")[:500]
-    combined = f"{title} {text}"
-
+        return True
+    combined = f"{item.get('title', '')} {item.get('detail_text', '')[:500]}"
     return any(kw in combined for kw in keywords)
 
 
-def matches_major(item: dict) -> bool:
-    """专业过滤（如果配置了专业关键词）"""
+def match_job_major(job: dict) -> bool:
+    """
+    判断单个岗位的专业是否匹配工科关键词。
+    仅匹配 major（专业要求）字段，不搜描述和岗位名（避免误匹配）。
+    如果未配置 major_keywords，则所有硕士岗位都匹配。
+    """
     keywords = cfg("filter.major_keywords", [])
     if not keywords:
         return True
 
-    text = item.get("detail_text", "")
-    return any(kw in text for kw in keywords)
+    major = job.get("major", "")
+    if not major:
+        return False
 
-
-def merge_excel_jobs(items: list, excel_data: dict) -> list:
-    """将 Excel 解析的硕士岗位挂载到对应公告上"""
-    excel_items = excel_data.get("items", [])
-    if not excel_items:
-        return items
-
-    # 按公告标题分组 Excel 岗位
-    by_title = {}
-    for job in excel_items:
-        title = job.get("_announcement_title", "")
-        by_title.setdefault(title, []).append(job)
-
-    for item in items:
-        title = item.get("title", "")
-        matched_jobs = by_title.get(title, [])
-        if matched_jobs:
-            item["excel_jobs"] = matched_jobs
-            item["excel_job_count"] = len(matched_jobs)
-            log.debug("公告 '%s' 关联 %d 个Excel岗位", title[:30], len(matched_jobs))
-
-    return items
+    return any(kw in major for kw in keywords)
 
 
 def run():
@@ -102,32 +79,31 @@ def run():
     scrape_file = Path(out_dir) / "scrape-result.json"
     scrape_data = load_json(scrape_file, {"items": []})
 
-    # 加载 Excel 解析结果
     excel_file = Path(out_dir) / "excel-jobs.json"
     excel_data = load_json(excel_file, {"items": []})
 
     items = scrape_data.get("items", [])
+    excel_items = excel_data.get("items", [])
+
     if not items:
         log.info("无公告需要筛选")
         save_json(Path(out_dir) / "filter-result.json", {
             "timestamp": now_iso(),
             "input_count": 0,
             "matched_count": 0,
-            "excel_total": excel_data.get("total_jobs", 0),
-            "excel_master": excel_data.get("master_jobs", 0),
+            "matched_jobs": [],
             "items": [],
         })
         return
 
-    # 文本匹配筛选
-    matched = []
+    # ── 第一级：公告级学历筛选 ──
+    matched_announcements = []
     for item in items:
-        if matches_education(item) and matches_region(item) and matches_major(item):
-            matched.append(item)
+        if matches_education(item) and matches_region(item):
+            matched_announcements.append(item)
 
-    # 如果 Excel 有硕士岗位，把没匹配到的公告也拉进来（它有 Excel 附件且解析到了硕士岗位）
-    matched_titles = {item["title"] for item in matched}
-    excel_items = excel_data.get("items", [])
+    # Excel 补充：有硕士岗位的公告也拉进来
+    matched_titles = {item["title"] for item in matched_announcements}
     excel_by_title = {}
     for job in excel_items:
         t = job.get("_announcement_title", "")
@@ -135,25 +111,46 @@ def run():
 
     for item in items:
         if item["title"] not in matched_titles and item["title"] in excel_by_title:
-            matched.append(item)
-            log.info("Excel 补充公告: %s (%d 岗位)", item["title"][:30], len(excel_by_title[item["title"]]))
+            matched_announcements.append(item)
 
-    # 合并 Excel 岗位详情到公告
-    matched = merge_excel_jobs(matched, excel_data)
+    # 挂载 Excel 岗位到公告
+    for item in matched_announcements:
+        title = item.get("title", "")
+        excel_jobs = excel_by_title.get(title, [])
+        if excel_jobs:
+            item["excel_jobs"] = excel_jobs
+            item["excel_job_count"] = len(excel_jobs)
+
+    # ── 第二级：岗位级专业匹配 ──
+    matched_jobs = []
+    for job in excel_items:
+        if match_job_major(job):
+            matched_jobs.append(job)
+
+    # 按招聘单位分组统计
+    by_employer = {}
+    for job in matched_jobs:
+        emp = job.get("employer_display", "") or job.get("employer", "未知")
+        by_employer.setdefault(emp, []).append(job)
+
+    log.info("筛选完成: 公告 %d/%d, Excel岗位 %d/%d (工科匹配)",
+             len(matched_announcements), len(items),
+             len(matched_jobs), len(excel_items))
+    log.info("工科岗位分布：%s",
+             ", ".join(f"{k}({len(v)})" for k, v in sorted(by_employer.items(), key=lambda x: -len(x[1]))[:8]))
 
     result = {
         "timestamp": now_iso(),
         "input_count": len(items),
-        "matched_count": len(matched),
+        "matched_count": len(matched_announcements),
         "excel_total": excel_data.get("total_jobs", 0),
         "excel_master": excel_data.get("master_jobs", 0),
-        "items": matched,
+        "matched_jobs_count": len(matched_jobs),
+        "items": matched_announcements,
+        "matched_jobs": matched_jobs,
     }
 
     save_json(Path(out_dir) / "filter-result.json", result)
-    log.info("筛选完成: %d/%d 条匹配 (Excel: %d总/%d硕士)",
-             len(matched), len(items),
-             excel_data.get("total_jobs", 0), excel_data.get("master_jobs", 0))
 
 
 if __name__ == "__main__":
