@@ -16,6 +16,84 @@ log = setup_logger("notify")
 DELIVERY_QUEUE_DIR = Path.home() / ".openclaw" / "delivery-queue"
 
 
+def clean_major(major: str) -> str:
+    """去掉专业名称中的数字代码，只保留中文"""
+    if not major:
+        return ""
+    # 移除6位数字代码前缀如 "0101哲学" → "哲学", "050301新闻学" → "新闻学"
+    import re
+    cleaned = re.sub(r'\b\d{2,6}', '', major)
+    # 清理多余空格和逗号
+    cleaned = re.sub(r'[，,]\s*[，,]', '，', cleaned)
+    cleaned = cleaned.strip('，, ')
+    return cleaned
+
+
+def format_jobs_detail(excel_jobs: list, show_limit: int) -> list:
+    """格式化 Excel 岗位详情为消息行"""
+    lines = []
+    # 按招聘单位分组（优先使用 employer_display）
+    by_employer = {}
+    for job in excel_jobs:
+        emp = job.get("employer_display", "") or job.get("employer", "未知单位")
+        by_employer.setdefault(emp, []).append(job)
+
+    total_employers = len(by_employer)
+    shown = 0
+
+    # 如果单位太多（>5），使用汇总模式
+    if total_employers > 5:
+        # 汇总模式：列出热门单位 + 统计
+        sorted_emps = sorted(by_employer.items(), key=lambda x: -len(x[1]))
+        top_emps = sorted_emps[:5]
+        rest_count = sum(len(v) for _, v in sorted_emps[5:])
+
+        for emp, emp_jobs in top_emps:
+            top_job = emp_jobs[0]
+            sample_major = clean_major(top_job.get("major", ""))
+            if sample_major and len(sample_major) > 20:
+                sample_major = sample_major[:20] + "..."
+            lines.append(f"  📍 {emp} — {len(emp_jobs)} 岗位")
+
+        if rest_count > 0:
+            rest_emp_count = total_employers - 5
+            lines.append(f"  📍 ... 另有 {rest_emp_count} 个单位共 {rest_count} 个岗位")
+        return lines
+
+    # 详细模式：每个单位展示具体岗位
+    for emp, emp_jobs in by_employer.items():
+        if shown >= show_limit:
+            remaining = len(excel_jobs) - shown
+            lines.append(f"  ... 还有 {remaining} 个岗位")
+            break
+
+        lines.append(f"  📍 **{emp}** ({len(emp_jobs)} 个岗位)")
+        for job in emp_jobs[:max(3, show_limit - shown)]:
+            pos = job.get("position", "—")
+            edu = job.get("education", "")
+            num = job.get("headcount", "")
+            major = clean_major(job.get("major", ""))
+
+            detail_parts = []
+            if num:
+                detail_parts.append(f"{num}人")
+            if edu:
+                detail_parts.append(edu)
+            if major:
+                if len(major) > 25:
+                    major = major[:25] + "..."
+                detail_parts.append(major)
+
+            detail = " · ".join(detail_parts)
+            lines.append(f"    - {pos}" + (f" [{detail}]" if detail else ""))
+            shown += 1
+
+        if len(emp_jobs) > max(3, show_limit - shown):
+            lines.append(f"    - ... 等 {len(emp_jobs)} 个岗位")
+
+    return lines
+
+
 def format_message(items: list) -> str:
     """格式化飞书推送消息（含 Excel 岗位详情）"""
     if not items:
@@ -53,48 +131,9 @@ def format_message(items: list) -> str:
             # 如果有 Excel 解析的岗位信息，展示详情
             excel_jobs = item.get("excel_jobs", [])
             if excel_jobs:
-                # 按招聘单位分组（优先使用 employer_display）
-                by_employer = {}
-                for job in excel_jobs:
-                    emp = job.get("employer_display", "") or job.get("employer", "未知单位")
-                    by_employer.setdefault(emp, []).append(job)
-
                 show_limit = cfg("notify.max_jobs_per_announcement", 10)
-                shown = 0
-
-                for emp, emp_jobs in by_employer.items():
-                    if shown >= show_limit:
-                        remaining = sum(len(v) for v in list(by_employer.values())[list(by_employer.keys()).index(emp):])
-                        lines.append(f"  ... 还有 {remaining} 个岗位")
-                        break
-
-                    # 显示单位名称
-                    display_emp = emp
-
-                    lines.append(f"  📍 **{display_emp}** ({len(emp_jobs)} 个岗位)")
-                    for job in emp_jobs[:max(3, show_limit - shown)]:
-                        pos = job.get("position", "—")
-                        edu = job.get("education", "")
-                        num = job.get("headcount", "")
-                        major = job.get("major", "")
-
-                        detail_parts = []
-                        if num:
-                            detail_parts.append(f"{num}人")
-                        if edu:
-                            detail_parts.append(edu)
-                        if major:
-                            if len(major) > 30:
-                                major = major[:30] + "..."
-                            detail_parts.append(major)
-
-                        detail = " · ".join(detail_parts)
-                        lines.append(f"    - {pos}" + (f" [{detail}]" if detail else ""))
-                        shown += 1
-
-                    if len(emp_jobs) > max(3, show_limit - shown):
-                        lines.append(f"    - ... 等 {len(emp_jobs)} 个岗位")
-
+                detail_lines = format_jobs_detail(excel_jobs, show_limit)
+                lines.extend(detail_lines)
                 lines.append("")
 
     lines.append(f"---\n🤖 自动监控 · 每日 05:00 更新")
