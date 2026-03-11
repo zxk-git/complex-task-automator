@@ -3,13 +3,13 @@
 batch_runner.py — 批量章节生成器
 循环调用 workflow-full 工作流，自动生成所有剩余章节。
 """
-import os
-import sys
-import json
-import time
-import subprocess
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
+import json
+import os
+import subprocess
+import sys
+import time
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, SCRIPT_DIR)
@@ -122,6 +122,8 @@ def run_workflow_for_chapter(chapter_num: int) -> dict:
 
 # ── 主流程 ────────────────────────────────────────────
 def run():
+    """run 的功能描述。
+        """
     banner("批量章节生成器 — Batch Runner", "📚")
 
     state = load_state()

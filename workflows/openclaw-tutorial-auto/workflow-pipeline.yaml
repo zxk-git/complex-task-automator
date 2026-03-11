@@ -1,0 +1,202 @@
+# =========================================================
+#  OpenClaw Tutorial & Code Auto — 统一优化工作流 v4.0
+# =========================================================
+#  双模式流水线:
+#    教程: scan → analyze → collect_refs → check_links →
+#          check_consistency → check_readability → refine →
+#          format → track → git → report
+#    代码: scan → analyze → refine → report
+#
+#  特性:
+#    - 模块化架构: prompts/ modules/ templates/ utils/
+#    - 统一入口: auto_optimizer.py (自动检测 tutorial/code)
+#    - 教程 11 阶段 + 代码 4 阶段
+#    - 六维度质量检测 + 自动修复
+#    - Python AST 深度代码分析
+#    - 代码自动修复 (docstring/imports/whitespace)
+#    - Git 自动提交推送
+#    - 飞书通知
+#
+#  调度: openclaw cron 每 4 小时触发
+# =========================================================
+
+name: openclaw-auto-optimizer
+version: "4.0"
+description: "统一自动优化流水线 v4.0: 教程 + 代码双模式"
+
+variables:
+  PROJECT_DIR: /root/.openclaw/workspace/zxk-private/openclaw-tutorial-auto
+  OUTPUT_DIR: /tmp/openclaw-tutorial-auto-reports
+  PIPELINE_DIR: /root/.openclaw/workspace/skills/complex-task-automator/workflows/openclaw-tutorial-auto
+  SCRIPTS_DIR: /root/.openclaw/workspace/skills/complex-task-automator/workflows/openclaw-tutorial-auto/scripts
+  DRY_RUN: "false"
+  MAX_CHAPTERS: "10"
+  LOG_LEVEL: "INFO"
+  MODE: "auto"                    # auto | tutorial | code | both
+  CODE_PROJECT_DIR: ""            # 代码模式目标目录（留空则用 PIPELINE_DIR）
+  MAX_FILES: "50"                 # 代码模式最大文件数
+
+config:
+  execution:
+    max_parallel: 1
+    timeout: 600
+  schedule:
+    type: cron
+    cron: "0 */4 * * *"
+    timezone: "Asia/Shanghai"
+
+# ============================================================
+#  openclaw cron 配置
+# ============================================================
+#
+#  {
+#    "name": "教程自动优化 v3.0",
+#    "schedule": { "kind": "cron", "expr": "0 */4 * * *", "tz": "Asia/Shanghai" },
+#    "sessionTarget": "isolated",
+#    "wakeMode": "now",
+#    "payload": {
+#      "kind": "agentTurn",
+#      "message": "立即执行以下命令，不要询问确认，直接运行并汇报结果：\n\ncd /root/.openclaw/workspace/skills/complex-task-automator/workflows/openclaw-tutorial-auto && python3 auto_optimizer.py --mode auto --max-chapters 5\n\n将脚本的完整输出作为结果汇报。如果执行成功，总结优化了哪些内容、评分变化和 Git 推送状态。",
+#      "timeoutSeconds": 600
+#    },
+#    "delivery": {
+#      "mode": "announce",
+#      "channel": "feishu",
+#      "to": "chat:oc_d618ee5b611928489deeccc66535a1e6"
+#    }
+#  }
+# ============================================================
+
+tasks:
+  # ============================================================
+  #  阶段 1: 环境初始化
+  # ============================================================
+  - id: init
+    name: "初始化优化环境"
+    type: shell
+    config:
+      command: |
+        set -e
+        mkdir -p "${OUTPUT_DIR}"
+        echo "╔════════════════════════════════════════════════════╗"
+        echo "║  📚 教程自动优化流水线 v3.0                        ║"
+        echo "╚════════════════════════════════════════════════════╝"
+        echo ""
+        echo "📁 项目: ${PROJECT_DIR}"
+        echo "📦 流水线: ${PIPELINE_DIR}"
+        echo "⏰ 时间: $(date '+%Y-%m-%d %H:%M:%S')"
+        echo "🔧 模式: ${DRY_RUN}"
+        echo ""
+
+        # 环境检查
+        python3 --version 2>/dev/null || { echo "❌ Python3 未安装"; exit 1; }
+        git --version 2>/dev/null || echo "⚠️ Git 未安装"
+
+        # 章节概览
+        echo "--- 当前章节 ---"
+        cd "${PROJECT_DIR}" && for f in [0-9]*.md; do
+          [ -f "$f" ] || continue
+          WC=$(wc -c < "$f" 2>/dev/null || echo 0)
+          echo "  $f — ${WC} bytes"
+        done
+      env:
+        PROJECT_DIR: "${PROJECT_DIR}"
+        OUTPUT_DIR: "${OUTPUT_DIR}"
+        PIPELINE_DIR: "${PIPELINE_DIR}"
+        DRY_RUN: "${DRY_RUN}"
+    timeout: 30
+
+  # ============================================================
+  #  阶段 2: 执行优化流水线
+  # ============================================================
+  - id: pipeline
+    name: "执行统一优化流水线"
+    type: shell
+    config:
+      command: |
+        set -e
+        cd "${PIPELINE_DIR}"
+
+        DRY_FLAG=""
+        if [ "${DRY_RUN}" = "true" ]; then
+          DRY_FLAG="--dry-run"
+        fi
+
+        CODE_DIR_FLAG=""
+        if [ -n "${CODE_PROJECT_DIR}" ]; then
+          CODE_DIR_FLAG="${CODE_PROJECT_DIR}"
+        fi
+
+        echo "🚀 启动 auto_optimizer.py --mode ${MODE}"
+        python3 auto_optimizer.py \
+          --mode "${MODE}" \
+          --max-chapters "${MAX_CHAPTERS}" \
+          --max-files "${MAX_FILES}" \
+          --output-dir "${OUTPUT_DIR}" \
+          ${DRY_FLAG} \
+          ${CODE_DIR_FLAG}
+      env:
+        PROJECT_DIR: "${PROJECT_DIR}"
+        OUTPUT_DIR: "${OUTPUT_DIR}"
+        PIPELINE_DIR: "${PIPELINE_DIR}"
+        DRY_RUN: "${DRY_RUN}"
+        MAX_CHAPTERS: "${MAX_CHAPTERS}"
+        MAX_FILES: "${MAX_FILES}"
+        MODE: "${MODE}"
+        CODE_PROJECT_DIR: "${CODE_PROJECT_DIR}"
+        LOG_LEVEL: "${LOG_LEVEL}"
+    depends_on: [init]
+    timeout: 540
+    retry:
+      max_attempts: 2
+      delay: 30
+
+  # ============================================================
+  #  阶段 3: 结果报告
+  # ============================================================
+  - id: summary
+    name: "输出优化摘要"
+    type: shell
+    config:
+      command: |
+        echo ""
+        echo "╔════════════════════════════════════════════════════╗"
+        echo "║  📊 优化完成摘要                                   ║"
+        echo "╚════════════════════════════════════════════════════╝"
+        echo ""
+
+        # 读取流水线结果
+        if [ -f "${OUTPUT_DIR}/pipeline-result.json" ]; then
+          python3 -c "
+import json
+data = json.load(open('${OUTPUT_DIR}/pipeline-result.json'))
+print(f\"耗时: {data.get('duration_seconds', 0):.1f} 秒\")
+print(f\"阶段: {data.get('stages_ok', 0)}/{len(data.get('stages_executed', []))} 成功\")
+for stage, result in data.get('results', {}).items():
+    status = '✅' if result['status'] == 'ok' else '❌'
+    print(f\"  {status} {stage}\")
+" 2>/dev/null || echo "无法读取流水线结果"
+        fi
+
+        echo ""
+
+        # 精炼结果
+        if [ -f "${OUTPUT_DIR}/refine-result.json" ]; then
+          python3 -c "
+import json
+data = json.load(open('${OUTPUT_DIR}/refine-result.json'))
+print(f\"精炼: {data.get('refined', 0)}/{data.get('total_processed', 0)} 章\")
+print(f\"总修改: {data.get('total_changes', 0)} 项\")
+for r in data.get('results', []):
+    if r.get('status') == 'refined':
+        print(f\"  ✅ {r['file']}: {r.get('change_count', 0)} 修改, {r.get('words_before', 0)}→{r.get('words_after', 0)} 字\")
+" 2>/dev/null || echo ""
+        fi
+
+        echo ""
+        echo "📊 完整报告: ${OUTPUT_DIR}/pipeline-report.md"
+        echo "⏰ 完成: $(date '+%Y-%m-%d %H:%M:%S')"
+      env:
+        OUTPUT_DIR: "${OUTPUT_DIR}"
+    depends_on: [pipeline]
+    timeout: 30

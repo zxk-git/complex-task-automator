@@ -3,15 +3,15 @@
 optimize_chapter.py — 基于网络最新信息优化已有章节
 核心流程: 搜索 → 对比 → 识别差异 → 合并新信息 → 重写 → 质量检查 → 提交
 """
-import os
-import sys
-import re
+from datetime import datetime
+from pathlib import Path
 import json
-import time
+import os
+import re
 import shutil
 import subprocess
-from pathlib import Path
-from datetime import datetime
+import sys
+import time
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, SCRIPT_DIR)
@@ -36,6 +36,11 @@ OPTIMIZE_HISTORY_FILE = os.path.join(OUTPUT_DIR, "optimize-history.json")
 
 
 def load_optimize_history() -> dict:
+    """load_optimize_history 的功能描述。
+
+        Returns:
+            dict: ...
+        """
     data = load_json(OPTIMIZE_HISTORY_FILE)
     if data:
         return data
@@ -43,6 +48,11 @@ def load_optimize_history() -> dict:
 
 
 def save_optimize_history(history: dict):
+    """save_optimize_history 的功能描述。
+
+        Args:
+            history (dict): ...
+        """
     history = trim_history(history, int(cfg("optimize.history_max_entries", 200)))
     save_json(OPTIMIZE_HISTORY_FILE, history)
 
@@ -379,11 +389,18 @@ def merge_new_content(chapter: dict, new_info: list) -> str:
 
 
 def select_chapters_to_optimize(max_chapters: int = 3) -> list:
-    """选择最需要优化的章节"""
+    """选择最需要优化的章节（自动检测所有已有章节）"""
     history = load_optimize_history()
     candidates = []
 
-    for ch_num in range(1, 14):
+    # 动态检测所有已完成章节，而非硬编码范围
+    from utils import find_completed_numbers
+    completed_nums = find_completed_numbers(PROJECT_DIR)
+    if not completed_nums:
+        log.warning("未找到任何章节文件")
+        return []
+
+    for ch_num in sorted(completed_nums):
         chapter = read_chapter(ch_num)
         if not chapter:
             continue
@@ -412,6 +429,8 @@ def select_chapters_to_optimize(max_chapters: int = 3) -> list:
 
 
 def run():
+    """run 的功能描述。
+        """
     import argparse
     parser = argparse.ArgumentParser(description="章节持续优化引擎")
     parser.add_argument("--chapter", type=int, default=0, help="指定优化章节 (0=自动选择)")
@@ -439,7 +458,9 @@ def run():
         # 优化指定章节
         chapters = [args.chapter]
     elif args.all:
-        chapters = list(range(1, 14))
+        # 动态检测所有章节
+        from utils import find_completed_numbers
+        chapters = sorted(find_completed_numbers(PROJECT_DIR))
     else:
         # 自动选择
         candidates = select_chapters_to_optimize(max_chap)

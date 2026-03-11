@@ -3,9 +3,10 @@
 openclaw-tutorial-auto 项目 — 环境与项目状态检查
 输出 JSON 格式检查结果
 """
-import json, shutil
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
+
+import json, shutil
 
 from utils import (
     get_project_dir,
@@ -24,10 +25,20 @@ log = setup_logger("check_env")
 
 
 def check_tool(name: str) -> bool:
+    """check_tool 的功能描述。
+
+        Args:
+            name (str): ...
+
+        Returns:
+            bool: ...
+        """
     return shutil.which(name) is not None
 
 
 def run():
+    """run 的功能描述。
+        """
     PROJECT_DIR = get_project_dir()
     OUTPUT_DIR = get_output_dir()
 

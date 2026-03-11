@@ -4,14 +4,14 @@ utils.py — 工作流共享工具库
 所有脚本通用的函数、常量和日志配置。
 消除重复代码，统一接口，提供结构化日志输出。
 """
+from datetime import datetime
+from pathlib import Path
+from typing import Optional
 import json
 import logging
 import os
 import re
 import shutil
-from datetime import datetime
-from pathlib import Path
-from typing import Optional
 
 # ═══════════════════════════════════════════════════════
 # 日志配置
@@ -125,6 +125,11 @@ def cfg(key: str, default=None):
 # ═══════════════════════════════════════════════════════
 
 def get_project_dir() -> str:
+    """get_project_dir 的功能描述。
+
+        Returns:
+            str: ...
+        """
     return os.environ.get(
         "PROJECT_DIR",
         cfg("project_dir", "/root/.openclaw/workspace/zxk-private/openclaw-tutorial-auto"),
@@ -132,6 +137,11 @@ def get_project_dir() -> str:
 
 
 def get_output_dir() -> str:
+    """get_output_dir 的功能描述。
+
+        Returns:
+            str: ...
+        """
     return os.environ.get(
         "OUTPUT_DIR",
         cfg("output_dir", "/tmp/openclaw-tutorial-auto-reports"),
@@ -139,10 +149,20 @@ def get_output_dir() -> str:
 
 
 def get_scripts_dir() -> str:
+    """get_scripts_dir 的功能描述。
+
+        Returns:
+            str: ...
+        """
     return os.environ.get("SCRIPTS_DIR", _SCRIPT_DIR)
 
 
 def get_expected_chapters() -> int:
+    """get_expected_chapters 的功能描述。
+
+        Returns:
+            int: ...
+        """
     return int(os.environ.get(
         "EXPECTED_CHAPTERS",
         cfg("expected_chapters", 13),
@@ -150,6 +170,11 @@ def get_expected_chapters() -> int:
 
 
 def get_encoding() -> str:
+    """get_encoding 的功能描述。
+
+        Returns:
+            str: ...
+        """
     return cfg("encoding", "utf-8")
 
 
@@ -373,3 +398,7 @@ def banner(title: str, icon: str = "🔧"):
     print(f"\n{'═' * 56}")
     print(f"  {icon} {title}")
     print(f"{'═' * 56}")
+
+
+if __name__ == "__main__":
+    pass

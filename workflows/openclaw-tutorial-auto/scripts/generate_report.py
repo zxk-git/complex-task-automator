@@ -3,11 +3,11 @@
 generate_report.py — 综合报告生成
 汇总所有检查结果 (env / quality / progress / dependency)，生成 Markdown 报告。
 """
-import os
-import json
-import sys
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
+import json
+import os
+import sys
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, SCRIPT_DIR)
@@ -24,10 +24,17 @@ PROJECT_DIR = get_project_dir()
 
 
 def severity_badge(level):
+    """severity_badge 的功能描述。
+
+        Args:
+            level: ...
+        """
     return {"pass": "✅", "warn": "⚠️", "fail": "❌"}.get(level, "ℹ️")
 
 
 def run():
+    """run 的功能描述。
+        """
     env_data = load_json(os.path.join(OUTPUT_DIR, "01-env-check.json"))
     quality_data = load_json(os.path.join(OUTPUT_DIR, "02-quality-check.json"))
     progress_data = load_json(os.path.join(OUTPUT_DIR, "03-progress-analysis.json"))

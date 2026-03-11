@@ -18,9 +18,10 @@ openclaw-tutorial-auto 项目 — 多维度章节质量检测系统 v2
   python check_quality.py --chapter 5  # 检查指定章节
   python check_quality.py --verbose    # 详细输出
 """
-import os, sys, json, re
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
+
+import os, sys, json, re
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, SCRIPT_DIR)
@@ -499,6 +500,8 @@ def generate_report_md(results: dict) -> str:
 # ============================================================
 
 def run():
+    """run 的功能描述。
+        """
     import argparse
     parser = argparse.ArgumentParser(description="多维度质量检测 v2")
     parser.add_argument("--chapter", type=int, default=0, help="指定章节号 (0=全部)")

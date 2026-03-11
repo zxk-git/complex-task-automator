@@ -12,16 +12,36 @@ outline_file: OUTLINE.md
 encoding: utf-8
 
 # ── 章节 ─────────────────────────────────────────────
-expected_chapters: 20
+expected_chapters: 21
 
-# ── 质量检查 (check_quality.py 六维度) ────────────────
+# ── 质量检查 (六维度评分 v2) ─────────────────────────
 quality:
-  min_words_per_chapter: 800        # 单章最低字数
+  min_words_per_chapter: 1200        # 单章最低字数
   min_sections_per_chapter: 3       # 最少 H2 小节数
   max_heading_depth: 4              # 最大标题嵌套层级
   require_code_blocks: true
   require_summary: true
-  pass_score: 70                    # 合格分数线 (0-100)
+  pass_score: 75                    # 合格分数线 (B 级)
+  # 六维度权重 (合计100)
+  weights:
+    content_depth: 25               # D1: 内容深度
+    structure: 20                   # D2: 结构完整性
+    code_quality: 15                # D3: 代码质量
+    pedagogy: 15                    # D4: 教学价值
+    references: 10                  # D5: 参考来源
+    readability: 15                 # D6: 可读性
+  # 缺陷惩罚（按严重程度）
+  defect_penalties:
+    critical: 5                     # placeholder
+    major: 3                        # heading_jump, dense_block
+    minor: 1                        # unlabeled_code_block, short_section
+  # 等级划分
+  grade_thresholds:
+    A: 90
+    B: 75
+    C: 60
+    D: 40
+    # < 40 = F
 
 # ── 批量生成 (batch_runner.py) ────────────────────────
 batch:
@@ -31,9 +51,9 @@ batch:
 
 # ── 持续优化 (optimize_chapter.py) ───────────────────
 optimize:
-  min_interval_hours: 12            # 同一章节冷却期
-  max_chapters: 3                   # 每轮最多优化章节数
-  history_max_entries: 200          # 优化历史最大条目数
+  min_interval_hours: 4             # 同一章节冷却期（配合每4h运行）
+  max_chapters: 4                   # 每轮最多优化章节数
+  history_max_entries: 500          # 优化历史最大条目数
 
 # ── 搜索 (web_researcher.py) ─────────────────────────
 search:
@@ -41,6 +61,20 @@ search:
   cache_max_days: 7                 # 缓存过期天数
   max_results_per_query: 5
   rate_limit_seconds: 1             # 搜索间隔
+  # 搜索引擎启用（按优先级）: tavily > bing > brave > ddg > baidu
+  engines:
+    tavily: true
+    bing: true
+    brave: true
+    ddg: true
+    baidu: true                     # 中文内容补充
+
+# ── 飞书通知 ─────────────────────────────────────────
+feishu:
+  chat_id: "chat:oc_d618ee5b611928489deeccc66535a1e6"
+  account: "default"
+  notify_on_optimize: true          # 优化后自动通知
+  notify_on_error: true             # 错误时通知
 
 # ── Git ──────────────────────────────────────────────
 git:
@@ -75,3 +109,33 @@ report:
 
 # ── 日志 ─────────────────────────────────────────────
 log_level: INFO
+
+# ── 代码优化模式 ──────────────────────────────────────
+code:
+  default_extensions:
+    - .py
+    - .js
+    - .ts
+    - .sh
+  ignore_dirs:
+    - node_modules
+    - __pycache__
+    - .git
+    - .venv
+    - dist
+    - build
+  quality:
+    pass_score: 75
+    weights:
+      structure: 20
+      documentation: 20
+      complexity: 20
+      style: 20
+      practices: 20
+  refine:
+    max_files_per_run: 20
+    auto_fix:
+      docstrings: true
+      imports: true
+      trailing_whitespace: true
+      main_guard: true

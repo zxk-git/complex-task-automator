@@ -3,9 +3,10 @@
 章节内容撰写 v2 — 基于 OpenClaw 真实知识库生成高质量教程内容
 从 workspace 扫描真实 Skills/配置，结合章节专属模板生成可读的内容
 """
-import os, json, re, glob
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
+
+import os, json, re, glob
 
 PROJECT_DIR = os.environ.get("PROJECT_DIR")
 OUTPUT_DIR  = os.environ.get("OUTPUT_DIR")
@@ -1977,25 +1978,25 @@ from pathlib import Path
 from datetime import datetime, timedelta
 
 def audit_chapter(filepath):
-    \"\"\"检查单个章节的内容问题\"\"\"  
+    \"\"\"检查单个章节的内容问题\"\"\"
     text = Path(filepath).read_text(encoding='utf-8')
     issues = []
-    
+
     # 检查过期的版本号
     versions = re.findall(r'v\\d+\\.\\d+\\.\\d+', text)
     if versions:
         issues.append(f'包含版本号引用: {versions}')
-    
+
     # 检查代码块是否完整
     code_opens = text.count('```')
     if code_opens % 2 != 0:
         issues.append('存在未闭合的代码块')
-    
+
     # 字数统计
     word_count = len(text)
     if word_count < 500:
         issues.append(f'内容过短: {word_count} 字')
-    
+
     return issues
 ```
 
@@ -2201,6 +2202,11 @@ checks:
 # ============================================================
 
 def load_json_safe(path):
+    """load_json_safe 的功能描述。
+
+        Args:
+            path: ...
+        """
     if Path(path).is_file():
         return json.loads(Path(path).read_text(encoding="utf-8"))
     return None
@@ -2304,6 +2310,8 @@ def generate_chapter(chapter_num: int, knowledge: dict, outline_data: dict, rese
 
 
 def run():
+    """run 的功能描述。
+        """
     proj = Path(PROJECT_DIR)
     out = Path(OUTPUT_DIR)
     out.mkdir(parents=True, exist_ok=True)

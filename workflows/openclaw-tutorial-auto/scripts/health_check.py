@@ -8,11 +8,11 @@ health_check.py — 24/7 健康检查与状态追踪
   - 生成可读状态报告（适合飞书推送）
   - 异常预警（连续失败、长时间无进展）
 """
+from datetime import datetime
+from pathlib import Path
+import json
 import os
 import sys
-import json
-from pathlib import Path
-from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from utils import (
@@ -211,6 +211,8 @@ def generate_status_report(progress, chapters, outline, batch_state, disk, env, 
 # ═══════════════════════════════════════════════════════
 
 def run():
+    """run 的功能描述。
+        """
     banner("健康检查 — Health Check", "🏥")
 
     # 收集数据

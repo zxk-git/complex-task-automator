@@ -9,9 +9,10 @@ web_researcher.py — 网络信息搜集与结构化整理
   python web_researcher.py --chapter 5             # 搜索指定章节
   python web_researcher.py --focus "security tips" # 额外关键词焦点
 """
-import json, os, re, subprocess, sys, time
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
+
+import json, os, re, subprocess, sys, time
 
 from utils import (
     get_project_dir,
@@ -53,7 +54,23 @@ CHAPTER_SEARCH_TOPICS = {
     11: ["OpenClaw third party integration API", "OpenClaw Google GitHub Notion MCP"],
     12: ["OpenClaw best practices use cases 2026", "OpenClaw FAQ common questions", "AI agent automation examples"],
     13: ["OpenClaw tutorial maintenance versioning", "OpenClaw community contribution guide"],
+    14: ["OpenClaw security permissions RBAC", "AI agent security best practices 2026", "OpenClaw access control"],
+    15: ["OpenClaw memory system knowledge base", "AI agent memory persistence 2026", "OpenClaw MEMORY.md workspace"],
+    16: ["MCP protocol tools integration 2026", "Model Context Protocol custom tools", "OpenClaw MCP server setup"],
+    17: ["OpenClaw browser automation puppeteer", "AI agent web scraping 2026", "headless browser automation"],
+    18: ["OpenClaw performance optimization scaling", "AI agent deployment scaling 2026", "concurrent agent management"],
+    19: ["OpenClaw team collaboration enterprise", "multi-user AI agent deployment", "enterprise AI agent management"],
+    20: ["OpenClaw ecosystem roadmap 2026", "AI agent platform future trends", "OpenClaw community plugins"],
+    21: ["OpenClaw feishu multi-bot configuration", "multi-agent feishu integration", "飞书多机器人配置"],
 }
+
+
+def _get_fallback_topics(chapter_num: int) -> list:
+    """为未在映射中的章节号自动生成通用搜索关键词"""
+    return [
+        f"OpenClaw chapter {chapter_num} tutorial 2026",
+        f"OpenClaw 教程 第{chapter_num}章 最新",
+    ]
 
 
 # ═══════════════════════════════════════════════════════
@@ -108,6 +125,104 @@ def search_ddg_lite(query: str) -> dict:
     return {"source": "ddg", "query": query, "results": [], "ok": False}
 
 
+def search_bing(query: str) -> dict:
+    """Bing 搜索（国际版，通过 curl 抓取）"""
+    try:
+        import urllib.parse
+        encoded = urllib.parse.quote_plus(query)
+        result = subprocess.run(
+            ["curl", "-sL", "-A", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36",
+             f"https://cn.bing.com/search?q={encoded}&ensearch=1"],
+            capture_output=True, text=True, timeout=15,
+        )
+        if result.returncode == 0:
+            # 提取搜索结果标题和链接
+            links = re.findall(r'<a[^>]+href="(https?://[^"]+)"[^>]*>([^<]+)</a>', result.stdout)
+            items = []
+            seen = set()
+            for url, title in links:
+                title = title.strip()
+                if (title and url not in seen
+                        and "bing.com" not in url.lower()
+                        and "microsoft.com" not in url.lower()
+                        and len(title) > 5):
+                    seen.add(url)
+                    items.append({"title": title, "url": url})
+                    if len(items) >= 6:
+                        break
+            return {"source": "bing", "query": query, "results": items, "ok": len(items) > 0}
+    except Exception as e:
+        log.warning("Bing 调用异常: %s", e)
+    return {"source": "bing", "query": query, "results": [], "ok": False}
+
+
+def search_baidu(query: str) -> dict:
+    """百度搜索（中文信息补充通道）"""
+    try:
+        import urllib.parse
+        encoded = urllib.parse.quote_plus(query)
+        result = subprocess.run(
+            ["curl", "-sL", "-A", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36",
+             f"https://www.baidu.com/s?wd={encoded}"],
+            capture_output=True, text=True, timeout=15,
+        )
+        if result.returncode == 0:
+            # 提取百度搜索结果
+            titles = re.findall(r'<h3[^>]*>.*?<a[^>]+href="([^"]+)"[^>]*>(.*?)</a>', result.stdout, re.DOTALL)
+            items = []
+            seen = set()
+            for url, title in titles:
+                title = re.sub(r'<[^>]+>', '', title).strip()
+                if title and url not in seen and len(title) > 3:
+                    seen.add(url)
+                    items.append({"title": title[:100], "url": url})
+                    if len(items) >= 6:
+                        break
+            return {"source": "baidu", "query": query, "results": items, "ok": len(items) > 0}
+    except Exception as e:
+        log.warning("百度调用异常: %s", e)
+    return {"source": "baidu", "query": query, "results": [], "ok": False}
+
+
+def search_brave(query: str) -> dict:
+    """Brave 搜索（隐私搜索引擎，补充多元视角）"""
+    try:
+        import urllib.parse
+        encoded = urllib.parse.quote_plus(query)
+        result = subprocess.run(
+            ["curl", "-sL", "-A", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36",
+             f"https://search.brave.com/search?q={encoded}"],
+            capture_output=True, text=True, timeout=15,
+        )
+        if result.returncode == 0:
+            links = re.findall(r'<a[^>]+href="(https?://[^"]+)"[^>]*>(.*?)</a>', result.stdout, re.DOTALL)
+            items = []
+            seen = set()
+            for url, title in links:
+                title = re.sub(r'<[^>]+>', '', title).strip()
+                if (title and url not in seen
+                        and "brave.com" not in url.lower()
+                        and len(title) > 5):
+                    seen.add(url)
+                    items.append({"title": title[:100], "url": url})
+                    if len(items) >= 6:
+                        break
+            return {"source": "brave", "query": query, "results": items, "ok": len(items) > 0}
+    except Exception as e:
+        log.warning("Brave 调用异常: %s", e)
+    return {"source": "brave", "query": query, "results": [], "ok": False}
+
+
+# 搜索引擎优先级（按可靠性排序）
+SEARCH_ENGINES = [
+    ("tavily", search_tavily),
+    ("bing", search_bing),
+    ("brave", search_brave),
+    ("ddg", search_ddg_lite),
+    ("baidu", search_baidu),
+]
+
+
 # ═══════════════════════════════════════════════════════
 # 缓存（使用 load_json / save_json）
 # ═══════════════════════════════════════════════════════
@@ -132,24 +247,28 @@ def save_cache(chapter_num: int, data: dict):
 # ═══════════════════════════════════════════════════════
 
 def research_chapter(chapter_num: int, extra_focus: str = "") -> dict:
-    """对单个章节进行网络信息搜集"""
+    """对单个章节进行多引擎网络信息搜集"""
     # 检查缓存
     cached = load_cache(chapter_num)
     if cached:
         log.info("使用今日缓存 (ch%02d)", chapter_num)
         return cached
 
-    queries = list(CHAPTER_SEARCH_TOPICS.get(chapter_num, [f"OpenClaw chapter {chapter_num}"]))
+    queries = list(CHAPTER_SEARCH_TOPICS.get(chapter_num, _get_fallback_topics(chapter_num)))
     if extra_focus:
         queries.append(f"OpenClaw {extra_focus}")
+
+    # 中文查询（百度专用）
+    cn_queries = [q for q in queries if any('\u4e00' <= c <= '\u9fff' for c in q)]
+    en_queries = [q for q in queries if not any('\u4e00' <= c <= '\u9fff' for c in q)]
 
     news_queries = [f"OpenClaw update news 2026", f"OpenClaw latest features {chapter_num}"]
 
     all_findings = []
     search_log = []
 
-    # 主搜索 (Tavily → DDG fallback)
-    for q in queries[:3]:
+    # === 主搜索: Tavily (最高质量) ===
+    for q in en_queries[:3]:
         log.info("Tavily: %s", q)
         result = search_tavily(q, n=5)
         search_log.append({"query": q, "source": result["source"], "ok": result["ok"]})
@@ -160,18 +279,48 @@ def research_chapter(chapter_num: int, extra_focus: str = "") -> dict:
                 "content": result["data"][:2000],
             })
         else:
-            log.info("DDG fallback: %s", q)
-            ddg = search_ddg_lite(q)
-            search_log.append({"query": q, "source": "ddg", "ok": ddg["ok"]})
-            if ddg["ok"]:
-                all_findings.append({
-                    "query": q,
-                    "source": "ddg",
-                    "results": ddg["results"][:5],
-                })
+            # 降级到 Bing → Brave → DDG
+            for fallback_name, fallback_fn in [("bing", search_bing), ("brave", search_brave), ("ddg", search_ddg_lite)]:
+                log.info("%s fallback: %s", fallback_name, q)
+                fb_result = fallback_fn(q)
+                search_log.append({"query": q, "source": fallback_name, "ok": fb_result["ok"]})
+                if fb_result["ok"]:
+                    all_findings.append({
+                        "query": q,
+                        "source": fallback_name,
+                        "results": fb_result.get("results", [])[:5],
+                    })
+                    break  # 找到一个可用源即可
         time.sleep(RATE_LIMIT_SECONDS)
 
-    # News 搜索
+    # === 补充搜索: Bing + Brave (多元视角) ===
+    supplementary_query = en_queries[0] if en_queries else queries[0]
+    for eng_name, eng_fn in [("bing", search_bing), ("brave", search_brave)]:
+        log.info("补充 %s: %s", eng_name, supplementary_query)
+        sup_result = eng_fn(supplementary_query)
+        search_log.append({"query": supplementary_query, "source": eng_name, "ok": sup_result["ok"]})
+        if sup_result["ok"]:
+            all_findings.append({
+                "query": supplementary_query,
+                "source": eng_name,
+                "results": sup_result.get("results", [])[:5],
+            })
+        time.sleep(RATE_LIMIT_SECONDS)
+
+    # === 中文搜索: 百度 ===
+    for q in (cn_queries or [queries[0]])[:1]:
+        log.info("百度: %s", q)
+        bd_result = search_baidu(q)
+        search_log.append({"query": q, "source": "baidu", "ok": bd_result["ok"]})
+        if bd_result["ok"]:
+            all_findings.append({
+                "query": q,
+                "source": "baidu",
+                "results": bd_result.get("results", [])[:5],
+            })
+        time.sleep(RATE_LIMIT_SECONDS)
+
+    # === 新闻搜索 ===
     for q in news_queries[:1]:
         log.info("News: %s", q)
         result = search_tavily(q, n=3, topic="news")
@@ -184,12 +333,18 @@ def research_chapter(chapter_num: int, extra_focus: str = "") -> dict:
             })
         time.sleep(RATE_LIMIT_SECONDS)
 
+    # 统计搜索引擎使用情况
+    engines_used = set(s["source"] for s in search_log if s["ok"])
+    engines_failed = set(s["source"] for s in search_log if not s["ok"])
+
     research_data = {
         "chapter": chapter_num,
         "timestamp": datetime.now().isoformat(),
         "findings_count": len(all_findings),
         "findings": all_findings,
         "search_log": search_log,
+        "engines_used": list(engines_used),
+        "engines_failed": list(engines_failed),
     }
 
     save_cache(chapter_num, research_data)
@@ -246,6 +401,8 @@ def research_all_chapters(extra_focus: str = "") -> dict:
 # ═══════════════════════════════════════════════════════
 
 def run():
+    """run 的功能描述。
+        """
     import argparse
     parser = argparse.ArgumentParser(description="网络信息搜集工具")
     parser.add_argument("--chapter", type=int, default=0, help="指定章节号 (0=全部)")

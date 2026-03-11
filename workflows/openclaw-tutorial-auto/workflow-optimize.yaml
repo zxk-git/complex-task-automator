@@ -1,15 +1,16 @@
 # =========================================================
-#  OpenClaw Tutorial Auto — 持续优化工作流
+#  OpenClaw Tutorial Auto — 24/7 持续优化工作流
 # =========================================================
-#  24/7 搜索网络最新信息 → 分析章节差距 → 自动优化内容 →
+#  核心循环: 搜索网络最新信息 → 分析章节差距 → 自动优化内容 →
 #  质量验证 → Git 提交推送 → 飞书通知
 #
-#  这是教程生成完成后的持续维护阶段核心
+#  由 daemon.py --mode continuous 统一调度
+#  openclaw cron 每 4 小时触发一次
 # =========================================================
 
 name: openclaw-tutorial-continuous-optimize
-version: "1.0"
-description: "24/7 持续优化：网络搜索 → 内容分析 → 章节增补 → Git 推送"
+version: "2.0"
+description: "24/7 持续优化：网络搜索 → 内容分析 → 章节增补 → 质量验证 → Git 推送 → 飞书通知"
 
 variables:
   PROJECT_DIR: /root/.openclaw/workspace/zxk-private/openclaw-tutorial-auto
@@ -18,112 +19,132 @@ variables:
   DRY_RUN: "false"
   GIT_REMOTE: "https://github.com/zxk-git/openclaw-tutorial-auto.git"
   MAX_CHAPTERS_PER_RUN: "3"
-  MIN_OPTIMIZE_INTERVAL_HOURS: "12"
+  MIN_OPTIMIZE_INTERVAL_HOURS: "8"
+  LOG_LEVEL: "INFO"
 
 config:
   execution:
     max_parallel: 1
-    timeout: 900
+    timeout: 600
   schedule:
     type: cron
-    cron: "0 */6 * * *"         # 每6小时运行一次
+    cron: "0 */4 * * *"         # 每4小时运行一次
     timezone: "Asia/Shanghai"
+  retry:
+    max_attempts: 2
+    delay: 30
+
+# ============================================================
+#  openclaw cron 配置 (agentTurn 方式调用)
+# ============================================================
+#
+#  openclaw cron 使用如下 payload 调用本工作流:
+#
+#  {
+#    "name": "教程24/7持续优化-搜索+优化+推送",
+#    "schedule": { "kind": "cron", "expr": "0 */4 * * *", "tz": "Asia/Shanghai" },
+#    "sessionTarget": "isolated",
+#    "wakeMode": "now",
+#    "payload": {
+#      "kind": "agentTurn",
+#      "message": "立即执行以下命令，不要询问确认，直接运行并汇报结果：\n\ncd /root/.openclaw/workspace/skills/complex-task-automator/workflows/openclaw-tutorial-auto/scripts && python3 daemon.py --mode continuous --max-chapters 3\n\n将脚本的完整输出作为结果汇报。如果执行成功，总结优化了哪些章节、字数变化和 Git 推送状态。",
+#      "timeoutSeconds": 600
+#    },
+#    "delivery": {
+#      "mode": "announce",
+#      "channel": "feishu",
+#      "to": "chat:oc_d618ee5b611928489deeccc66535a1e6"
+#    }
+#  }
+# ============================================================
 
 tasks:
   # ============================================================
-  #  阶段 1: 初始化 + 状态检查
+  #  阶段 1: 初始化 + 环境验证
   # ============================================================
   - id: init
     name: "初始化优化环境"
     type: shell
     config:
       command: |
+        set -e
         mkdir -p "${OUTPUT_DIR}/research-cache" "${OUTPUT_DIR}/history"
         echo "╔════════════════════════════════════════════════════╗"
-        echo "║  🔄 24/7 持续优化工作流                           ║"
+        echo "║  🔄 24/7 持续优化工作流 v2.0                      ║"
         echo "╚════════════════════════════════════════════════════╝"
         echo ""
         echo "📁 项目: ${PROJECT_DIR}"
         echo "⏰ 时间: $(date '+%Y-%m-%d %H:%M:%S')"
+        echo "🔧 模式: continuous (搜索+优化+推送)"
+        echo ""
+
+        # 环境检查
+        echo "--- 环境检查 ---"
+        python3 --version 2>/dev/null && echo "  ✅ Python3" || { echo "  ❌ Python3 未安装"; exit 1; }
+        git --version 2>/dev/null && echo "  ✅ Git" || { echo "  ❌ Git 未安装"; exit 1; }
+        node --version 2>/dev/null && echo "  ✅ Node.js" || echo "  ⚠️ Node.js 未安装（Tavily 搜索不可用，将使用 DDG 降级）"
+
+        # Git 仓库状态
+        if [ -d "${PROJECT_DIR}/.git" ]; then
+          echo "  ✅ Git 仓库已初始化"
+          cd "${PROJECT_DIR}" && git remote -v 2>/dev/null | head -2
+        else
+          echo "  ⚠️ Git 仓库未初始化（将自动创建）"
+        fi
+
         echo ""
         echo "--- 当前章节状态 ---"
-        cd "${PROJECT_DIR}" && for f in *.md; do
-          [ "$f" = "README.md" ] || [ "$f" = "OUTLINE.md" ] && continue
+        TOTAL=0
+        cd "${PROJECT_DIR}" && for f in [0-9]*.md; do
+          [ -f "$f" ] || continue
           WC=$(wc -c < "$f" 2>/dev/null || echo 0)
           echo "  $f — ${WC} bytes"
+          TOTAL=$((TOTAL + 1))
         done
+        echo ""
+        echo "📊 共 ${TOTAL} 个章节文件"
+
+        # 磁盘空间
+        echo ""
+        echo "--- 磁盘空间 ---"
+        df -h "${PROJECT_DIR}" | tail -1 | awk '{print "  使用: "$3"/"$2" ("$5" 已用)"}'
       env:
         PROJECT_DIR: "${PROJECT_DIR}"
         OUTPUT_DIR: "${OUTPUT_DIR}"
-    timeout: 15
+    timeout: 30
 
   # ============================================================
-  #  阶段 2: 网络信息搜集
+  #  阶段 2: 一键执行 (daemon.py continuous 模式)
   # ============================================================
-  - id: web-research
-    name: "搜索网络最新信息"
-    type: python
+  - id: continuous-optimize
+    name: "执行持续优化循环"
+    type: shell
     config:
-      script: "${SCRIPTS_DIR}/web_researcher.py"
+      command: |
+        set -e
+        cd "${SCRIPTS_DIR}"
+        echo "🚀 启动 daemon.py --mode continuous"
+        echo ""
+        python3 daemon.py \
+          --mode continuous \
+          --max-chapters "${MAX_CHAPTERS_PER_RUN}"
       env:
         PROJECT_DIR: "${PROJECT_DIR}"
         OUTPUT_DIR: "${OUTPUT_DIR}"
+        SCRIPTS_DIR: "${SCRIPTS_DIR}"
+        DRY_RUN: "${DRY_RUN}"
+        MIN_OPTIMIZE_INTERVAL_HOURS: "${MIN_OPTIMIZE_INTERVAL_HOURS}"
+        MAX_CHAPTERS_PER_RUN: "${MAX_CHAPTERS_PER_RUN}"
+        GIT_REMOTE: "${GIT_REMOTE}"
+        LOG_LEVEL: "${LOG_LEVEL}"
     depends_on: [init]
-    timeout: 300
+    timeout: 540
     retry:
       max_attempts: 2
       delay: 30
 
   # ============================================================
-  #  阶段 3: 章节优化
-  # ============================================================
-  - id: optimize
-    name: "基于搜索结果优化章节"
-    type: python
-    config:
-      script: "${SCRIPTS_DIR}/optimize_chapter.py"
-      args: ["--max-chapters", "${MAX_CHAPTERS_PER_RUN}"]
-      env:
-        PROJECT_DIR: "${PROJECT_DIR}"
-        OUTPUT_DIR: "${OUTPUT_DIR}"
-        DRY_RUN: "${DRY_RUN}"
-        MIN_OPTIMIZE_INTERVAL_HOURS: "${MIN_OPTIMIZE_INTERVAL_HOURS}"
-    depends_on: [web-research]
-    timeout: 600
-
-  # ============================================================
-  #  阶段 4: 质量验证
-  # ============================================================
-  - id: quality-check
-    name: "优化后质量验证"
-    type: python
-    config:
-      script: "${SCRIPTS_DIR}/check_quality.py"
-      env:
-        PROJECT_DIR: "${PROJECT_DIR}"
-        OUTPUT_DIR: "${OUTPUT_DIR}"
-    depends_on: [optimize]
-    timeout: 60
-
-  # ============================================================
-  #  阶段 5: Git 提交推送
-  # ============================================================
-  - id: git-push
-    name: "Git 提交并推送"
-    type: python
-    config:
-      script: "${SCRIPTS_DIR}/git_workflow.py"
-      env:
-        PROJECT_DIR: "${PROJECT_DIR}"
-        OUTPUT_DIR: "${OUTPUT_DIR}"
-        GIT_AUTO_COMMIT: "true"
-        GIT_BRANCH: "main"
-        GIT_REMOTE: "${GIT_REMOTE}"
-    depends_on: [quality-check]
-    timeout: 60
-
-  # ============================================================
-  #  阶段 6: 健康报告 + 通知
+  #  阶段 3: 结果报告
   # ============================================================
   - id: report
     name: "生成优化报告"
@@ -135,14 +156,70 @@ tasks:
         echo "╚════════════════════════════════════════════════════╝"
         echo ""
 
+        # 读取 daemon 执行结果
+        if [ -f "${OUTPUT_DIR}/daemon-result.json" ]; then
+          echo "--- 调度器结果 ---"
+          python3 -c "
+import json, sys
+try:
+    data = json.load(open('${OUTPUT_DIR}/daemon-result.json'))
+    print(f\"模式: {data.get('mode', 'N/A')}\")
+    print(f\"耗时: {data.get('duration', 0):.1f} 秒\")
+    print(f\"阶段数: {len(data.get('stages', []))}\")
+    for s in data.get('stages', []):
+        stage = s.get('stage', '')
+        result = s.get('result', {})
+        status = result.get('status', result.get('lastRunStatus', 'ok'))
+        print(f\"  {stage}: {status}\")
+except Exception as e:
+    print(f'读取失败: {e}')
+"
+        fi
+        echo ""
+
         # 读取优化结果
         if [ -f "${OUTPUT_DIR}/optimize-result.json" ]; then
           echo "--- 优化结果 ---"
-          cat "${OUTPUT_DIR}/optimize-result.json" | python3 -c "import sys, json; data=json.load(sys.stdin); print(f\"优化章节: {data.get('optimized_chapters', [])}\"); print(f\"新增内容: {data.get('new_content_summary', '无')}\")"
+          python3 -c "
+import json
+try:
+    data = json.load(open('${OUTPUT_DIR}/optimize-result.json'))
+    print(f\"优化章节数: {data.get('optimized', 0)}/{data.get('total_checked', 0)}\")
+    for r in data.get('results', []):
+        ch = r.get('chapter', '?')
+        st = r.get('status', '?')
+        before = r.get('before', {}).get('word_count', '-')
+        after = r.get('after', {}).get('word_count', '-')
+        if st == 'optimized':
+            print(f\"  第{ch}章: {before} → {after} 字 ✅\")
+        else:
+            print(f\"  第{ch}章: {st}\")
+except Exception as e:
+    print(f'读取失败: {e}')
+"
         else
-          echo "未找到优化结果文件。"
+          echo "未找到优化结果文件（可能本轮无需优化）"
         fi
+        echo ""
+
+        # Git 推送结果
+        if [ -f "${OUTPUT_DIR}/git-result.json" ]; then
+          echo "--- Git 推送 ---"
+          python3 -c "
+import json
+try:
+    data = json.load(open('${OUTPUT_DIR}/git-result.json'))
+    summary = data.get('summary', {})
+    print(f\"状态: {'已推送 ✅' if summary.get('committed') else '无变更'}\")
+    print(f\"变更文件: {summary.get('changes', 0)}\")
+except Exception as e:
+    print(f'读取失败: {e}')
+"
+        fi
+        echo ""
+        echo "⏰ 完成时间: $(date '+%Y-%m-%d %H:%M:%S')"
+        echo "📅 下次运行: 约 4 小时后"
       env:
         OUTPUT_DIR: "${OUTPUT_DIR}"
-    depends_on: [git-push]
-    timeout: 15
+    depends_on: [continuous-optimize]
+    timeout: 30
