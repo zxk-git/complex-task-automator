@@ -110,13 +110,25 @@ def fix_broken_code_closings(text: str) -> tuple:
 
 def clean_raw_scrape_artifacts(text: str) -> tuple:
     """移除 AI 优化过程中混入的原始搜索/爬虫结果。"""
+    changes = []
+
     # 移除 "### 补充 N" 及其后续内容 (直到下一个 H2 或文件末尾)
     pattern = r"\n### 补充 \d+\n.*?(?=\n## |\Z)"
     matches = re.findall(pattern, text, re.DOTALL)
     if matches:
         text = re.sub(pattern, "", text, flags=re.DOTALL)
-        return text, [f"removed {len(matches)} raw scrape artifact blocks"]
-    return text, None
+        changes.append(f"removed {len(matches)} raw scrape artifact blocks")
+
+    # 去重 "## 最新动态与补充" 段落 (保留最后一个)
+    update_pattern = r"\n## 最新动态与补充\n\n> 📅 更新时间: \d{4}-\d{2}-\d{2}\n?"
+    update_blocks = list(re.finditer(update_pattern, text))
+    if len(update_blocks) > 1:
+        # 从后往前删除，保留最后一个
+        for m in reversed(update_blocks[:-1]):
+            text = text[:m.start()] + text[m.end():]
+        changes.append(f"deduplicated {len(update_blocks)-1} '最新动态' blocks")
+
+    return (text, changes) if changes else (text, None)
 
 
 # ── P1: GitHub Alert 语法统一 ──
@@ -253,7 +265,7 @@ def add_chapter_navigation(text: str, chapter_num: int, nav_info: dict) -> tuple
 
 def add_toc(text: str) -> tuple:
     """在 H1 标题后添加本章目录。返回 (修改后文本, 变更描述)。"""
-    if re.search(r"##\s*📑?\s*本章目录|##\s*目录", text):
+    if re.search(r"##\s+.*(?:📑?\s*本章目录|目录)", text):
         return text, None
 
     # 提取 H2 标题
@@ -364,7 +376,7 @@ def add_references_section(text: str, chapter_num: int,
         chapter_num: 章节编号
         collected_refs: reference_collector 的输出 (per-chapter dict)
     """
-    if re.search(r"##\s*参考来源|##\s*References", text, re.IGNORECASE):
+    if re.search(r"##\s+.*(?:参考来源|References)", text, re.IGNORECASE):
         return text, None
 
     # 优先使用 collected_refs 中的 Markdown 块
@@ -406,13 +418,13 @@ def add_references_section(text: str, chapter_num: int,
 """
 
     # 在"本章小结"前或文件末尾插入
-    summary_match = re.search(r"\n##\s*本章小结", text)
+    summary_match = re.search(r"\n##\s+.*本章小结", text)
     if summary_match:
         pos = summary_match.start()
         text = text[:pos] + refs_block + text[pos:]
     else:
         # 在章尾导航前或文件末尾
-        nav_match = re.search(r"\n>\s*\*\*📖\s*章节导航", text)
+        nav_match = re.search(r"\n---\s*\n+<div align=\"center\">\s*\n+\[.*📑 返回目录|\n>\s*\*\*📖\s*章节导航", text)
         if nav_match:
             pos = nav_match.start()
             text = text[:pos] + refs_block + text[pos:]
@@ -424,7 +436,7 @@ def add_references_section(text: str, chapter_num: int,
 
 def add_faq_section(text: str, chapter_title: str) -> tuple:
     """添加 FAQ 段落（如不存在）。根据章节内容生成定制化 FAQ。"""
-    if re.search(r"##\s*常见问题|##\s*FAQ", text, re.IGNORECASE):
+    if re.search(r"##\s+.*(?:常见问题|FAQ)", text, re.IGNORECASE):
         return text, None
 
     # 从章节内容中提取 H2 标题，生成有针对性的 FAQ
@@ -473,8 +485,8 @@ def add_faq_section(text: str, chapter_title: str) -> tuple:
     faq_block = "\n\n## 常见问题 (FAQ)\n\n" + "\n\n".join(q_items) + "\n"
 
     # 在"本章小结"前插入
-    summary_match = re.search(r"\n##\s*本章小结", text)
-    refs_match = re.search(r"\n##\s*参考来源", text)
+    summary_match = re.search(r"\n##\s+.*本章小结", text)
+    refs_match = re.search(r"\n##\s+.*参考来源", text)
     insert_before = summary_match or refs_match
     if insert_before:
         pos = insert_before.start()
@@ -487,7 +499,7 @@ def add_faq_section(text: str, chapter_title: str) -> tuple:
 
 def add_summary_section(text: str, chapter_title: str) -> tuple:
     """添加本章小结（如不存在）。从章节内容提取要点生成有针对性的小结。"""
-    if re.search(r"##\s*本章小结|##\s*Summary", text, re.IGNORECASE):
+    if re.search(r"##\s+.*(?:本章小结|Summary)", text, re.IGNORECASE):
         return text, None
 
     # 提取 H2 标题作为要点
@@ -523,8 +535,8 @@ def add_summary_section(text: str, chapter_title: str) -> tuple:
     )
 
     # 在参考来源前或文件末尾
-    refs_match = re.search(r"\n##\s*参考来源", text)
-    nav_match = re.search(r"\n>\s*\*\*📖\s*章节导航", text)
+    refs_match = re.search(r"\n##\s+.*参考来源", text)
+    nav_match = re.search(r"\n---\s*\n+<div align=\"center\">\s*\n+\[.*📑 返回目录|\n>\s*\*\*📖\s*章节导航", text)
     insert_before = refs_match or nav_match
     if insert_before:
         pos = insert_before.start()
