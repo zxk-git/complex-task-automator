@@ -108,6 +108,13 @@ report:
   include_next_steps: true
 
 # ── 日志 ─────────────────────────────────────────────
+# ── 引用增强 (suggestion_enricher.py) ─────────────
+enricher:
+  web_search_in_dry_run: false       # dry-run 模式是否启用 Web 搜索
+  max_refs_per_suggestion: 3         # 每条建议最多引用数
+  cache_max_days: 7                  # Web 搜索缓存过期天数
+  static_refs_only: false            # 仅使用静态引用（不搜索）
+
 log_level: INFO
 
 # ── 代码优化模式 ──────────────────────────────────────
@@ -117,6 +124,13 @@ code:
     - .js
     - .ts
     - .sh
+    - .go
+    - .rs
+    - .c
+    - .h
+    - .cpp
+    - .hpp
+    - .java
   ignore_dirs:
     - node_modules
     - __pycache__

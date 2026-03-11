@@ -1,16 +1,16 @@
 # =========================================================
-#  OpenClaw Tutorial & Code Auto — 统一优化工作流 v4.0
+#  OpenClaw Tutorial & Code Auto — 统一优化工作流 v5.0
 # =========================================================
 #  双模式流水线:
 #    教程: scan → analyze → collect_refs → check_links →
 #          check_consistency → check_readability → refine →
 #          format → track → git → report
-#    代码: scan → analyze → refine → report
+#    代码: scan → analyze → enrich → refine → report
 #
 #  特性:
 #    - 模块化架构: prompts/ modules/ templates/ utils/
 #    - 统一入口: auto_optimizer.py (自动检测 tutorial/code)
-#    - 教程 11 阶段 + 代码 4 阶段
+#    - 教程 11 阶段 + 代码 5 阶段
 #    - 六维度质量检测 + 自动修复
 #    - Python AST 深度代码分析
 #    - 代码自动修复 (docstring/imports/whitespace)
@@ -21,8 +21,8 @@
 # =========================================================
 
 name: openclaw-auto-optimizer
-version: "4.0"
-description: "统一自动优化流水线 v4.0: 教程 + 代码双模式"
+version: "5.0"
+description: "统一自动优化流水线 v5.0: 教程+代码双模式, 8语言支持, 引用增强"
 
 variables:
   PROJECT_DIR: /root/.openclaw/workspace/zxk-private/openclaw-tutorial-auto

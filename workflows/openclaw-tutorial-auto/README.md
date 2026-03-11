@@ -1,4 +1,4 @@
-# 📚 OpenClaw 自动优化系统 v4.0
+# 📚 OpenClaw 自动优化系统 v5.0
 
 > 统一自动化优化系统：教程文档 + 代码质量，双模式流水线。
 
@@ -8,9 +8,9 @@
 openclaw-tutorial-auto/
 ├── auto_optimizer.py        # 统一入口（自动检测 tutorial/code/both）
 ├── pipeline.py              # 教程流水线编排器（11 阶段）
-├── code_pipeline.py         # 代码流水线编排器（4 阶段）
+├── code_pipeline.py         # 代码流水线编排器（5 阶段）
 ├── config.yaml              # 全局配置
-├── workflow-pipeline.yaml   # OpenClaw 工作流 v4.0
+├── workflow-pipeline.yaml   # OpenClaw 工作流 v5.0
 │
 ├── modules/                 # 功能模块
 │   ├── tutorial_scanner.py      # 教程扫描: 章节元数据、结构、缺陷
@@ -22,9 +22,10 @@ openclaw-tutorial-auto/
 │   ├── consistency_checker.py   # 教程一致性: 术语/格式一致检查
 │   ├── readability_analyzer.py  # 教程可读性: 段落密度/句长分析
 │   ├── optimization_tracker.py  # 教程追踪: 优化历史记录
-│   ├── code_scanner.py          # 代码扫描: AST 分析、复杂度、类型覆盖
-│   ├── code_analyzer.py         # 代码分析: 优化建议、优先级队列
-│   └── code_refiner.py          # 代码修复: docstring/imports/whitespace
+│   ├── code_scanner.py          # 代码扫描: 8 语言深度分析、五维度评分、缺陷检测
+│   ├── code_analyzer.py         # 代码分析: 31 种模板、优先级建议、引用元数据
+│   ├── code_refiner.py          # 代码修复: docstring/imports/whitespace/doxygen/javadoc
+│   └── suggestion_enricher.py   # 引用增强: 静态引用 + Web搜索最佳实践
 │
 ├── prompts/                 # AI 提示词（模块化）
 ├── templates/               # 输出模板
@@ -55,17 +56,18 @@ check_readability → refine → format → track → git → report
 | **git** | `utils/git_ops` | 安全提交 + 推送 |
 | **report** | pipeline 内置 | 生成结构化优化报告 |
 
-### 代码模式 (4 阶段)
+### 代码模式 (5 阶段)
 ```
-scan → analyze → refine → report
+scan → analyze → enrich → refine → report
 ```
 
 | 阶段 | 模块 | 说明 |
 |------|------|------|
-| **scan** | `code_scanner` | Python AST 分析 + 通用语言分析，五维度评分 |
-| **analyze** | `code_analyzer` | 生成优先级优化建议（10 种模板） |
-| **refine** | `code_refiner` | 自动修复 (docstring/imports/whitespace/main guard) |
-| **report** | code_pipeline 内置 | 生成 Markdown 分析报告 |
+| **scan** | `code_scanner` | 8 语言深度分析 (Python/JS/TS/Go/Shell/Rust/C/C++/Java)，五维度评分 |
+| **analyze** | `code_analyzer` | 生成优先级优化建议（31 种模板），覆盖 8 语言族 |
+| **enrich** | `suggestion_enricher` | 为建议附加最佳实践参考链接（静态引用 + Web 搜索） |
+| **refine** | `code_refiner` | 自动修复 (docstring/doxygen/javadoc/imports/header_guard 等) |
+| **report** | code_pipeline 内置 | 生成 Markdown + HTML 双格式报告，含引用和分数表 |
 | **collect_refs** | `reference_collector` | 按章节主题匹配权威参考来源数据库 |
 | **refine** | `tutorial_refiner` | 按优先级对章节执行增量修复（导航、目录、标题、代码标签、FAQ、摘要、参考链接、中英文间距、密集段落拆分） |
 | **format** | `formatter` | 统一全仓 Markdown 格式（反引号、标题间距、空行、尾部空格、CJK 间距、链接格式） |
@@ -148,15 +150,16 @@ openclaw workflow run workflow-pipeline.yaml
 
 ## 与旧系统的对比
 
-| 特性 | v1 (scripts/) | v3.0 (modules/) | v4.0 (当前) |
+| 特性 | v1 (scripts/) | v3.0 (modules/) | v5.0 (当前) |
 |------|--------------|-----------------|-------------|
 | 架构 | 16 个扁平脚本 | 5 模块 + 编排器 | 12 模块 + 双流水线 |
 | 模式 | 仅教程 | 仅教程 | 教程 + 代码 |
 | 流水线 | 无 | 7 阶段 | 教程 11 / 代码 4 |
 | 质量评分 | 自评膨胀 (96-99) | 六维度 (0-100) | 六维度教程 + 五维度代码 |
-| 代码分析 | 无 | 无 | Python AST 深度分析 |
-| 自动修复 | 无 | 教程格式修复 | 教程 + 代码 (docstring/imports) |
-| 进度报告 | 13/13 (实际 21 章) | 真实 21/21 | 双模式报告 |
+| 代码分析 | 无 | 无 | 8 语言深度分析 (Python/JS/TS/Go/Shell/Rust/C/C++/Java) |
+| 优化建议 | 无 | 无 | 31 种模板 + 权威引用 (Web搜索增强) |
+| 自动修复 | 无 | 教程格式修复 | 教程 + 代码 (docstring/doxygen/javadoc/header_guard) |
+| 进度报告 | 13/13 (实际 21 章) | 真实 21/21 | Markdown + HTML 双格式报告 |
 | 配置 | 分散各处 | 统一 yaml | 统一 yaml + 代码配置 |
 | 可测试性 | 无 | 支持 dry-run | 全链路 dry-run |
 
@@ -173,7 +176,7 @@ quality:
 
 # 代码配置
 code:
-  default_extensions: [.py, .js, .ts, .sh]
+  default_extensions: [.py, .js, .ts, .sh, .go, .rs, .c, .h, .cpp, .java]
   quality:
     pass_score: 75
     weights: { structure: 20, documentation: 20, complexity: 20, style: 20, practices: 20 }
