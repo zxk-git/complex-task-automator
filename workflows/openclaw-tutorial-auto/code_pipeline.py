@@ -73,7 +73,6 @@ log = setup_logger("code_pipeline")
 
 class CodePipeline:
     """代码优化流水线。"""
-
     STAGES = ["scan", "analyze", "enrich", "refine", "report"]
 
     def __init__(self, project_dir: str, output_dir: str = None,
@@ -170,6 +169,7 @@ class CodePipeline:
                  f"(静态:{e.get('static_refs', 0)}, Web:{e.get('web_search_refs', 0)})")
         log.info(f"  覆盖: {e.get('unique_templates_enriched', 0)} 种建议类型")
         return enriched
+
 
     def _stage_refine(self):
         """代码自动优化。"""
@@ -315,7 +315,7 @@ class CodePipeline:
         if refine.get("results"):
             lines.extend([
                 "",
-                "## \u2705 自动修复结果",
+                "## ✅ 自动修复结果",
                 "",
             ])
             for r in refine["results"]:
@@ -330,7 +330,7 @@ class CodePipeline:
         if enrichment.get("total_references", 0) > 0:
             lines.extend([
                 "",
-                f"## \U0001f4da 最佳实践参考 ({enrichment.get('total_references', 0)} 条)",
+                f"## 📚 最佳实践参考 ({enrichment.get('total_references', 0)} 条)",
                 "",
                 f"- 静态引用: **{enrichment.get('static_refs', 0)}** 条",
                 f"- Web 搜索: **{enrichment.get('web_search_refs', 0)}** 条",
@@ -354,9 +354,9 @@ class CodePipeline:
 
         # 建议
         if analysis.get("recommendations"):
-            lines.extend(["", "## \U0001f4a1 建议", ""])
+            lines.extend(["", "## 💡 建议", ""])
             for rec in analysis["recommendations"]:
-                emoji = {"high": "\U0001f534", "medium": "\U0001f7e1", "low": "\U0001f7e2"}.get(
+                emoji = {"high": "🔴", "medium": "🟡", "low": "🟢"}.get(
                     rec.get("priority", ""), "")
                 lines.append(f"- {emoji} {rec['description']}")
 
@@ -518,12 +518,43 @@ footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid #e2e8f0;
                          f'{dim_cells}<td>{defect_count}</td></tr>')
             h.append('</table></div>')
 
+        # 最佳实践参考
+        enrichment = analysis.get("enrichment", {})
+        if enrichment.get("total_references", 0) > 0:
+            h.append(f'<h2>📚 最佳实践参考 ({enrichment.get("total_references", 0)} 条)</h2>')
+            h.append(f'<p>静态引用: <b>{enrichment.get("static_refs", 0)}</b> | '
+                     f'Web 搜索: <b>{enrichment.get("web_search_refs", 0)}</b></p>')
+            seen_urls = set()
+            ref_by_type = {}
+            for imp in analysis.get("improvements", []):
+                for ref in imp.get("references", []):
+                    url = ref.get("url", "")
+                    if url not in seen_urls:
+                        seen_urls.add(url)
+                        key = imp.get("type", "other")
+                        ref_by_type.setdefault(key, []).append(ref)
+            h.append('<div class="card"><table>')
+            h.append('<tr><th>建议类型</th><th>参考文献</th><th>可信度</th></tr>')
+            for ttype, trefs in sorted(ref_by_type.items()):
+                for i, ref in enumerate(trefs[:3]):
+                    cred = ref.get("credibility", "?")
+                    cred_color = {"A": "#22c55e", "B": "#3b82f6", "C": "#eab308"}.get(cred, "#6b7280")
+                    type_cell = f"<b>{ttype}</b>" if i == 0 else ""
+                    src = ref.get("source_engine")
+                    src_tag = (f' <span class="tag" style="background:#fef3c7;color:#92400e">'
+                               f'🔍 {src}</span>' if src else "")
+                    h.append(f'<tr><td>{type_cell}</td>'
+                             f'<td><a href="{ref.get("url", "")}" target="_blank">'
+                             f'{ref.get("title", "")}</a>{src_tag}</td>'
+                             f'<td><span class="badge" style="background:{cred_color}">'
+                             f'{cred}</span></td></tr>')
+            h.append("</table></div>")
+
         # 优化建议
         if analysis.get("improvements"):
             h.append(f'<h2>💡 优化建议 ({analysis.get("total_improvements", 0)} 项)</h2>')
             h.append(f'<p>可自动修复: <strong>{analysis.get("auto_fixable", 0)}</strong> 项 '
                      f'({analysis.get("auto_fixable_ratio", 0)*100:.0f}%)</p>')
-            # 按类别
             by_cat = analysis.get("by_category", {})
             if by_cat:
                 h.append('<div class="card"><table><tr><th>类别</th><th>数量</th></tr>')
