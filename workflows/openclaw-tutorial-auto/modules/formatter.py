@@ -15,20 +15,14 @@ import os
 import re
 import sys
 
-from modules.compat import setup_logger, cfg, save_json, word_count
+from modules.compat import (
+    setup_logger, cfg, save_json, word_count,
+    read_file_safe, PROJECT_DIR, OUTPUT_DIR, DRY_RUN,
+)
 
-def _read_file(filepath: str) -> str:
-    """直接读取文件内容。"""
-    with open(filepath, encoding="utf-8") as f:
-        return f.read()
+_read_file = read_file_safe
 
 log = setup_logger("formatter")
-
-PROJECT_DIR = cfg("project_dir", os.environ.get(
-    "PROJECT_DIR", "/root/.openclaw/workspace/zxk-private/openclaw-tutorial-auto"))
-OUTPUT_DIR = cfg("output_dir", os.environ.get(
-    "OUTPUT_DIR", "/tmp/openclaw-tutorial-auto-reports"))
-DRY_RUN = os.environ.get("DRY_RUN", "false").lower() == "true"
 
 
 def format_chapter(filepath: str) -> dict:

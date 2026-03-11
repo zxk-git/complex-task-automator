@@ -17,14 +17,9 @@ import os
 import re
 import sys
 
-from modules.compat import setup_logger, cfg, load_json, save_json, word_count
+from modules.compat import setup_logger, cfg, load_json, save_json, word_count, PROJECT_DIR, OUTPUT_DIR
 
 log = setup_logger("readability_analyzer")
-
-OUTPUT_DIR = cfg("output_dir", os.environ.get(
-    "OUTPUT_DIR", "/tmp/openclaw-tutorial-auto-reports"))
-PROJECT_DIR = cfg("project_dir", os.environ.get(
-    "PROJECT_DIR", "/root/.openclaw/workspace/zxk-private/openclaw-tutorial-auto"))
 
 
 # ═══════════════════════════════════════════════════════

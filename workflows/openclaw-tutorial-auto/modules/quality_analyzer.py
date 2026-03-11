@@ -16,14 +16,10 @@ import os
 import re
 import sys
 
-from modules.compat import setup_logger, cfg, load_json, save_json
+from modules.compat import setup_logger, cfg, load_json, save_json, PROJECT_DIR, OUTPUT_DIR
+from modules.types import ChapterScanResult, ChapterAnalysis
 
 log = setup_logger("quality_analyzer")
-
-OUTPUT_DIR = cfg("output_dir", os.environ.get(
-    "OUTPUT_DIR", "/tmp/openclaw-tutorial-auto-reports"))
-PROJECT_DIR = cfg("project_dir", os.environ.get(
-    "PROJECT_DIR", "/root/.openclaw/workspace/zxk-private/openclaw-tutorial-auto"))
 
 # ── 推荐章节结构模板 ────────────────────────────────
 REQUIRED_SECTIONS = [
@@ -48,7 +44,7 @@ SECTION_PATTERNS = {
 }
 
 
-def analyze_chapter(chapter_data: dict) -> dict:
+def analyze_chapter(chapter_data: ChapterScanResult) -> ChapterAnalysis:
     """分析单个章节，生成优化计划。
 
     estimated_impact 现在使用数值（分），与 tutorial_scanner 的 SCORING 常量对齐：

@@ -18,21 +18,17 @@ import re
 import shutil
 import sys
 
-_PROMPTS = os.path.join(os.path.dirname(__file__), "..", "prompts")
-from modules.compat import setup_logger, cfg, load_json, save_json, word_count
+from modules.types import ChapterAnalysis, RefineResult
 
-def _read_file(filepath: str) -> str:
-    """直接读取文件内容。"""
-    with open(filepath, encoding="utf-8") as f:
-        return f.read()
+_PROMPTS = os.path.join(os.path.dirname(__file__), "..", "prompts")
+from modules.compat import (
+    setup_logger, cfg, load_json, save_json, word_count,
+    read_file_safe, PROJECT_DIR, OUTPUT_DIR, DRY_RUN,
+)
+
+_read_file = read_file_safe
 
 log = setup_logger("tutorial_refiner")
-
-PROJECT_DIR = cfg("project_dir", os.environ.get(
-    "PROJECT_DIR", "/root/.openclaw/workspace/zxk-private/openclaw-tutorial-auto"))
-OUTPUT_DIR = cfg("output_dir", os.environ.get(
-    "OUTPUT_DIR", "/tmp/openclaw-tutorial-auto-reports"))
-DRY_RUN = os.environ.get("DRY_RUN", "false").lower() == "true"
 
 
 # ── 导航信息缓存 ────────────────────────────────────
@@ -415,8 +411,8 @@ def fix_dense_blocks(text: str) -> tuple:
 
 # ── 核心精炼逻辑 ────────────────────────────────────
 
-def refine_chapter(chapter_analysis: dict, nav_info: dict,
-                   refs_data: dict = None) -> dict:
+def refine_chapter(chapter_analysis: ChapterAnalysis, nav_info: dict,
+                   refs_data: dict = None) -> RefineResult:
     """根据分析结果精炼单个章节。
 
     Args:

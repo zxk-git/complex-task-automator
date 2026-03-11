@@ -273,9 +273,16 @@ def optimize_single_chapter(chapter_num: int, research_data: dict = None) -> dic
 
     # 如果没有预加载的研究数据，执行搜索
     if not research_data:
-        import web_researcher
-        log.info(f"搜索第 {chapter_num} 章最新信息...")
-        research_data = web_researcher.research_chapter(chapter_num)
+        try:
+            import web_researcher
+            log.info(f"搜索第 {chapter_num} 章最新信息...")
+            research_data = web_researcher.research_chapter(chapter_num)
+        except ImportError:
+            log.warning("web_researcher 模块不可用，跳过网络搜索")
+            research_data = {}
+        except Exception as e:
+            log.warning(f"网络搜索失败 (非致命): {e}")
+            research_data = {}
 
     # 提取新信息
     new_info = extract_new_info(research_data, chapter["content"])
@@ -302,7 +309,11 @@ def optimize_single_chapter(chapter_num: int, research_data: dict = None) -> dic
     if optimized_content and len(optimized_content) > len(chapter["content"]):
         # 备份原文件
         backup_path = chapter["path"] + ".bak"
-        shutil.copy2(chapter["path"], backup_path)
+        try:
+            shutil.copy2(chapter["path"], backup_path)
+        except OSError as e:
+            log.warning(f"备份失败 ({e})，继续优化但不备份")
+            backup_path = None
 
         # 写入优化后内容
         Path(chapter["path"]).write_text(optimized_content, encoding="utf-8")
@@ -474,10 +485,19 @@ def run():
 
     # 先进行搜索
     banner("阶段 1: 网络信息搜集", "🌐")
-    import web_researcher
-    for ch_num in chapters:
-        log.info(f"第 {ch_num} 章: 搜索中...")
-        web_researcher.research_chapter(ch_num)
+    try:
+        import web_researcher
+    except ImportError:
+        log.warning("web_researcher 模块不可用，跳过网络搜索阶段")
+        web_researcher = None
+
+    if web_researcher:
+        for ch_num in chapters:
+            log.info(f"第 {ch_num} 章: 搜索中...")
+            try:
+                web_researcher.research_chapter(ch_num)
+            except Exception as e:
+                log.warning(f"第 {ch_num} 章搜索失败 (非致命): {e}")
 
     # 再进行优化
     banner("阶段 2: 章节优化", "📝")

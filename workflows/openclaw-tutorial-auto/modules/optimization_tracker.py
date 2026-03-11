@@ -22,12 +22,10 @@ import os
 import re
 import sys
 
-from modules.compat import setup_logger, cfg, load_json, save_json
+from modules.compat import setup_logger, cfg, load_json, save_json, OUTPUT_DIR
 
 log = setup_logger("optimization_tracker")
 
-OUTPUT_DIR = cfg("output_dir", os.environ.get(
-    "OUTPUT_DIR", "/tmp/openclaw-tutorial-auto-reports"))
 MAX_HISTORY = int(cfg("optimize.history_max_entries", "500"))
 HISTORY_FILE = "optimization-history.json"
 TRENDS_FILE = "optimization-trends.json"

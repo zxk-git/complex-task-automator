@@ -39,6 +39,7 @@ from modules.consistency_checker import check_all as check_consistency
 from modules.readability_analyzer import analyze_all as analyze_readability
 from modules.optimization_tracker import record_batch, analyze_trends
 from modules.compat import setup_logger, cfg, save_json
+from base_pipeline import BasePipeline
 
 log = setup_logger("pipeline")
 
@@ -48,7 +49,7 @@ PROJECT_DIR = cfg("project_dir", os.environ.get(
     "PROJECT_DIR", "/root/.openclaw/workspace/zxk-private/openclaw-tutorial-auto"))
 
 
-class Pipeline:
+class Pipeline(BasePipeline):
     """教程优化流水线。"""
 
     STAGES = [
@@ -56,68 +57,29 @@ class Pipeline:
         "check_links", "check_consistency", "check_readability",
         "refine", "format", "track", "git", "report",
     ]
+    CRITICAL_STAGES = ("scan", "analyze")
+    PIPELINE_NAME = "教程自动优化流水线"
+    PIPELINE_VERSION = "5.0"
+    PIPELINE_ICON = "📚"
 
     def __init__(self, max_chapters=None, dry_run=False, stages=None,
                  web_search=False, check_external=False):
+        super().__init__(dry_run=dry_run, stages=stages)
         self.max_chapters = max_chapters
-        self.dry_run = dry_run
         self.web_search = web_search
         self.check_external = check_external
-        self.stages = stages or self.STAGES
-        self.results = {}
-        self.start_time = None
 
-        if dry_run:
-            os.environ["DRY_RUN"] = "true"
+    @property
+    def output_dir(self) -> str:
+        return OUTPUT_DIR
 
-    def run(self) -> dict:
-        """执行流水线。"""
-        self.start_time = time.time()
-        os.makedirs(OUTPUT_DIR, exist_ok=True)
+    @property
+    def project_dir(self) -> str:
+        return PROJECT_DIR
 
-        log.info("╔════════════════════════════════════════════════╗")
-        log.info("║  📚 教程自动优化流水线 v5.0                    ║")
-        log.info("╚════════════════════════════════════════════════╝")
-        log.info(f"项目: {PROJECT_DIR}")
-        log.info(f"输出: {OUTPUT_DIR}")
-        log.info(f"阶段: {' → '.join(self.stages)}")
-        log.info(f"模式: {'DRY_RUN' if self.dry_run else 'LIVE'}")
-        log.info("")
-
-        for stage in self.stages:
-            handler = getattr(self, f"_stage_{stage}", None)
-            if not handler:
-                log.warning(f"未知阶段: {stage}，跳过")
-                continue
-
-            log.info(f"{'='*50}")
-            log.info(f"  Stage: {stage.upper()}")
-            log.info(f"{'='*50}")
-
-            try:
-                result = handler()
-                self.results[stage] = {
-                    "status": "ok",
-                    "data": result,
-                    "duration": time.time() - self.start_time,
-                }
-                log.info(f"  ✅ {stage} 完成")
-            except Exception as e:
-                log.error(f"  ❌ {stage} 失败: {e}")
-                self.results[stage] = {
-                    "status": "error",
-                    "error": str(e),
-                    "duration": time.time() - self.start_time,
-                }
-                # 非关键阶段失败不中断流水线
-                if stage in ("scan", "analyze"):
-                    log.error("  关键阶段失败，中断流水线")
-                    break
-
-            log.info("")
-
-        # 生成最终报告
-        return self._generate_final_report()
+    @property
+    def report_filename(self) -> str:
+        return "pipeline-result.json"
 
     def _stage_scan(self):
         """阶段 1: 扫描教程仓库。"""
@@ -444,29 +406,6 @@ class Pipeline:
         ])
 
         return "\n".join(lines)
-
-    def _generate_final_report(self) -> dict:
-        """生成最终的 JSON 结果。"""
-        duration = time.time() - self.start_time if self.start_time else 0
-        report = {
-            "pipeline_version": "5.0",
-            "timestamp": datetime.now(tz=timezone.utc).isoformat(),
-            "duration_seconds": round(duration, 1),
-            "dry_run": self.dry_run,
-            "stages_executed": list(self.results.keys()),
-            "stages_ok": sum(1 for r in self.results.values() if r["status"] == "ok"),
-            "stages_failed": sum(1 for r in self.results.values() if r["status"] == "error"),
-            "results": {
-                k: {"status": v["status"], "duration": v.get("duration", 0)}
-                for k, v in self.results.items()
-            },
-        }
-
-        save_json(os.path.join(OUTPUT_DIR, "pipeline-result.json"), report)
-        log.info(f"流水线完成: {report['stages_ok']}/{len(self.results)} 阶段成功, "
-                  f"耗时 {duration:.1f}s")
-
-        return report
 
 
 def main():

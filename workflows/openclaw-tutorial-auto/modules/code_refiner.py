@@ -18,6 +18,8 @@ import ast
 import json
 import os
 import re
+
+from modules.types import CodeRefineResult
 import sys
 
 from modules.compat import setup_logger, cfg, save_json
@@ -30,9 +32,8 @@ def _is_dry_run() -> bool:
     return os.environ.get("DRY_RUN", "").lower() in ("true", "1", "yes")
 
 
-def _read_file(filepath: str) -> str:
-    with open(filepath, encoding="utf-8") as f:
-        return f.read()
+from modules.compat import read_file_safe
+_read_file = read_file_safe
 
 
 def _write_file(filepath: str, content: str):
@@ -610,7 +611,7 @@ def add_javadoc(filepath: str, text: str) -> tuple:
 
 # ── 主入口 ───────────────────────────────────────────
 
-def refine_file(filepath: str, improvements: list = None) -> dict:
+def refine_file(filepath: str, improvements: list = None) -> CodeRefineResult:
     """对单个文件执行自动优化。"""
     text = _read_file(filepath)
     original = text

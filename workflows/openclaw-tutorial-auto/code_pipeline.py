@@ -30,71 +30,46 @@ from modules.code_analyzer import analyze_all as code_analyze
 from modules.code_refiner import refine_all as code_refine
 from modules.suggestion_enricher import enrich_suggestions as code_enrich
 from modules.compat import setup_logger, cfg, save_json
+from base_pipeline import BasePipeline
 
 log = setup_logger("code_pipeline")
 
 
-class CodePipeline:
+class CodePipeline(BasePipeline):
     """代码优化流水线。"""
     STAGES = ["scan", "analyze", "enrich", "refine", "report"]
+    CRITICAL_STAGES = ("scan",)
+    PIPELINE_NAME = "代码自动优化流水线"
+    PIPELINE_VERSION = "1.0"
+    PIPELINE_ICON = "🔧"
 
     def __init__(self, project_dir: str, output_dir: str = None,
                  max_files: int = None, dry_run: bool = False,
                  stages: list = None, extensions: list = None):
-        self.project_dir = os.path.abspath(project_dir)
-        self.output_dir = output_dir or os.path.join("/tmp", "openclaw-code-reports",
-                                                      os.path.basename(self.project_dir))
+        super().__init__(dry_run=dry_run, stages=stages)
+        self._project_dir = os.path.abspath(project_dir)
+        self._output_dir = output_dir or os.path.join("/tmp", "openclaw-code-reports",
+                                                       os.path.basename(self._project_dir))
         self.max_files = max_files
-        self.dry_run = dry_run
-        self.stages = stages or self.STAGES
         self.extensions = extensions
-        self.results = {}
-        self.start_time = None
 
-        if dry_run:
-            os.environ["DRY_RUN"] = "true"
+    @property
+    def output_dir(self) -> str:
+        return self._output_dir
 
-    def run(self) -> dict:
-        """执行代码优化流水线。"""
-        self.start_time = time.time()
-        os.makedirs(self.output_dir, exist_ok=True)
+    @property
+    def project_dir(self) -> str:
+        return self._project_dir
 
-        log.info("╔════════════════════════════════════════════════╗")
-        log.info("║  🔧 代码自动优化流水线 v1.0                    ║")
-        log.info("╚════════════════════════════════════════════════╝")
-        log.info(f"项目: {self.project_dir}")
-        log.info(f"输出: {self.output_dir}")
-        log.info(f"阶段: {' → '.join(self.stages)}")
-        log.info(f"模式: {'DRY_RUN' if self.dry_run else 'LIVE'}")
+    @property
+    def report_filename(self) -> str:
+        return "code-pipeline-result.json"
+
+    def _print_banner(self):
+        """扩展 banner，增加 extensions 信息。"""
+        super()._print_banner()
         if self.extensions:
-            log.info(f"扩展名: {self.extensions}")
-        log.info("")
-
-        for stage in self.stages:
-            handler = getattr(self, f"_stage_{stage}", None)
-            if not handler:
-                log.warning(f"未知阶段: {stage}，跳过")
-                continue
-
-            log.info(f"{'='*50}")
-            log.info(f"  Stage: {stage.upper()}")
-            log.info(f"{'='*50}")
-
-            try:
-                result = handler()
-                self.results[stage] = {"status": "ok", "data": result}
-                log.info(f"  ✅ {stage} 完成")
-            except Exception as e:
-                log.error(f"  ❌ {stage} 失败: {e}")
-                import traceback
-                traceback.print_exc()
-                self.results[stage] = {"status": "error", "error": str(e)}
-                if stage in ("scan",):
-                    log.error("  关键阶段失败，中断流水线")
-                    break
-            log.info("")
-
-        return self._generate_final_report()
+            self._log.info(f"扩展名: {self.extensions}")
 
     def _stage_scan(self):
         """扫描代码仓库。"""
@@ -571,29 +546,6 @@ footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid #e2e8f0;
         h.append(f'<footer>自动生成 by OpenClaw Code Pipeline v1.0 | {ts}</footer>')
         h.append('</body></html>')
         return "\n".join(h)
-
-    def _generate_final_report(self) -> dict:
-        """JSON 最终结果。"""
-        duration = time.time() - self.start_time if self.start_time else 0
-        report = {
-            "pipeline_version": "1.0",
-            "mode": "code",
-            "timestamp": datetime.now(tz=timezone.utc).isoformat(),
-            "project_dir": self.project_dir,
-            "duration_seconds": round(duration, 1),
-            "dry_run": self.dry_run,
-            "stages_executed": list(self.results.keys()),
-            "stages_ok": sum(1 for r in self.results.values() if r["status"] == "ok"),
-            "stages_failed": sum(1 for r in self.results.values() if r["status"] == "error"),
-            "results": {
-                k: {"status": v["status"]}
-                for k, v in self.results.items()
-            },
-        }
-        save_json(os.path.join(self.output_dir, "code-pipeline-result.json"), report)
-        log.info(f"流水线完成: {report['stages_ok']}/{len(self.results)} 阶段成功, "
-                  f"耗时 {duration:.1f}s")
-        return report
 
 
 def main():

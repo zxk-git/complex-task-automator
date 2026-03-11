@@ -213,5 +213,23 @@ __all__ = [
     "load_json", "save_json", "word_count",
     "parse_outline", "find_completed_chapters", "read_chapter",
     "run_git", "get_project_dir", "get_output_dir",
-    "progress_bar",
+    "progress_bar", "read_file_safe",
+    "PROJECT_DIR", "OUTPUT_DIR", "DRY_RUN",
 ]
+
+# ── 统一路径常量 ────────────────────────────────────
+PROJECT_DIR = get_project_dir()
+OUTPUT_DIR = get_output_dir()
+DRY_RUN = os.environ.get("DRY_RUN", "false").lower() in ("true", "1", "yes")
+
+# ── 安全文件读取 ────────────────────────────────────
+_log = setup_logger("compat")
+
+def read_file_safe(filepath: str) -> str:
+    """安全读取文件，统一错误处理。"""
+    try:
+        with open(filepath, encoding="utf-8", errors="replace") as f:
+            return f.read()
+    except (FileNotFoundError, PermissionError, OSError) as e:
+        _log.warning("读取失败: %s — %s", filepath, e)
+        return ""

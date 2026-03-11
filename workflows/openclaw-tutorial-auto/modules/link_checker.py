@@ -27,14 +27,9 @@ import time
 
 import concurrent.futures
 
-from modules.compat import setup_logger, cfg, load_json, save_json
+from modules.compat import setup_logger, cfg, load_json, save_json, PROJECT_DIR, OUTPUT_DIR
 
 log = setup_logger("link_checker")
-
-PROJECT_DIR = cfg("project_dir", os.environ.get(
-    "PROJECT_DIR", "/root/.openclaw/workspace/zxk-private/openclaw-tutorial-auto"))
-OUTPUT_DIR = cfg("output_dir", os.environ.get(
-    "OUTPUT_DIR", "/tmp/openclaw-tutorial-auto-reports"))
 
 # ── 配置常量 ────────────────────────────────────────
 HTTP_TIMEOUT = 10          # 外部 URL 探活超时 (秒)

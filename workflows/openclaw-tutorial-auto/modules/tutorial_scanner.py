@@ -18,30 +18,40 @@ import sys
 from modules.compat import (
     setup_logger, cfg, load_json, save_json,
     parse_outline, find_completed_chapters, word_count,
+    read_file_safe, PROJECT_DIR, OUTPUT_DIR,
 )
+from modules.types import ChapterScanResult
 
-def _read_file(filepath: str) -> str:
-    """直接读取文件内容（不使用 legacy read_chapter）。"""
-    with open(filepath, encoding="utf-8") as f:
-        return f.read()
+_read_file = read_file_safe
 
 log = setup_logger("tutorial_scanner")
 
-# ── 配置 ────────────────────────────────────────────
-PROJECT_DIR = cfg("project_dir", os.environ.get(
-    "PROJECT_DIR", "/root/.openclaw/workspace/zxk-private/openclaw-tutorial-auto"))
-OUTPUT_DIR = cfg("output_dir", os.environ.get(
-    "OUTPUT_DIR", "/tmp/openclaw-tutorial-auto-reports"))
+# ── 预编译正则 (避免每章重复编译) ────────────────────
+_RE_HEADING = re.compile(r"^(#{1,6})\s+(.+)")
+_RE_TOC = re.compile(r"##\s*📑?\s*本章目录|##\s*目录")
+_RE_NAV = re.compile(r"\[←\s*上一章|上一章.*\]\(")
+_RE_CODE_BLOCK = re.compile(r"```(\w*)")
+_RE_TABLE = re.compile(r"^\|.+\|$\n\|[-:| ]+\|$", re.MULTILINE)
+_RE_IMAGE = re.compile(r"!\[.*?\]\(.*?\)")
+_RE_LINK_INTERNAL = re.compile(r"\[.*?\]\((?!https?://|#)(.*?\.md.*?)\)")
+_RE_LINK_EXTERNAL = re.compile(r"\[.*?\]\((https?://.*?)\)")
+_RE_FAQ = re.compile(r"##\s*常见问题|##\s*FAQ", re.IGNORECASE)
+_RE_SUMMARY = re.compile(r"##\s*本章小结|##\s*小结|##\s*Summary", re.IGNORECASE)
+_RE_REFERENCES = re.compile(r"##\s*参考来源|##\s*参考|##\s*References", re.IGNORECASE)
+_RE_CLI = re.compile(r"openclaw\s+\w+")
+_RE_BLOCKQUOTE = re.compile(r"^>\s+", re.MULTILINE)
+_RE_PLACEHOLDER = re.compile(r"TODO|TBD|待补充|待完善|FIXME|xxx|your-.*-here", re.IGNORECASE)
+_RE_CHAPTER_NUM = re.compile(r"(\d+)")
 
 
-def scan_chapter(filepath: str) -> dict:
+def scan_chapter(filepath: str) -> ChapterScanResult:
     """扫描单个章节文件，提取全部元数据。"""
     text = _read_file(filepath)
     lines = text.split("\n")
     fname = os.path.basename(filepath)
 
     # ── 基础元数据 ──
-    match = re.match(r"(\d+)", fname)
+    match = _RE_CHAPTER_NUM.match(fname)
     chapter_num = int(match.group(1)) if match else 0
 
     # 提取 H1 标题
@@ -58,7 +68,7 @@ def scan_chapter(filepath: str) -> dict:
     prev_level = 0
 
     for i, line in enumerate(lines, 1):
-        m = re.match(r"^(#{1,6})\s+(.+)", line)
+        m = _RE_HEADING.match(line)
         if m:
             level = len(m.group(1))
             headings[f"h{level}"] += 1
@@ -68,31 +78,31 @@ def scan_chapter(filepath: str) -> dict:
             prev_level = level
 
     # ── 目录/导航检测 ──
-    has_toc = bool(re.search(r"##\s*📑?\s*本章目录|##\s*目录", text))
-    has_nav = bool(re.search(r"\[←\s*上一章|上一章.*\]\(", text))
+    has_toc = bool(_RE_TOC.search(text))
+    has_nav = bool(_RE_NAV.search(text))
 
     # ── 内容质量指标 ──
-    code_blocks = re.findall(r"```(\w*)", text)
+    code_blocks = _RE_CODE_BLOCK.findall(text)
     code_block_count = len(code_blocks)
     code_langs = [c for c in code_blocks if c]
     unlabeled_code = code_block_count - len(code_langs)
 
-    tables = len(re.findall(r"^\|.+\|$\n\|[-:| ]+\|$", text, re.MULTILINE))
-    images = len(re.findall(r"!\[.*?\]\(.*?\)", text))
-    links_internal = len(re.findall(r"\[.*?\]\((?!https?://|#)(.*?\.md.*?)\)", text))
-    links_external = len(re.findall(r"\[.*?\]\((https?://.*?)\)", text))
-    has_faq = bool(re.search(r"##\s*常见问题|##\s*FAQ", text, re.IGNORECASE))
-    has_summary = bool(re.search(r"##\s*本章小结|##\s*小结|##\s*Summary", text, re.IGNORECASE))
-    has_references = bool(re.search(r"##\s*参考来源|##\s*参考|##\s*References", text, re.IGNORECASE))
-    has_cli = bool(re.search(r"openclaw\s+\w+", text))
-    blockquotes = len(re.findall(r"^>\s+", text, re.MULTILINE))
+    tables = len(_RE_TABLE.findall(text))
+    images = len(_RE_IMAGE.findall(text))
+    links_internal = len(_RE_LINK_INTERNAL.findall(text))
+    links_external = len(_RE_LINK_EXTERNAL.findall(text))
+    has_faq = bool(_RE_FAQ.search(text))
+    has_summary = bool(_RE_SUMMARY.search(text))
+    has_references = bool(_RE_REFERENCES.search(text))
+    has_cli = bool(_RE_CLI.search(text))
+    blockquotes = len(_RE_BLOCKQUOTE.findall(text))
 
     # ── 缺陷检测 ──
     defects = []
 
     # 占位符
     for i, line in enumerate(lines, 1):
-        if re.search(r"TODO|TBD|待补充|待完善|FIXME|xxx|your-.*-here", line, re.IGNORECASE):
+        if _RE_PLACEHOLDER.search(line):
             defects.append({"type": "placeholder", "line": i, "text": line.strip()[:80]})
 
     # 空/短段落 (H2 小节内容不足)

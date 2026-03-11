@@ -18,6 +18,7 @@ import re
 import sys
 
 from modules.compat import setup_logger, cfg, save_json
+from modules.types import CodeFileScanResult
 
 log = setup_logger("code_scanner")
 
@@ -78,13 +79,8 @@ def _should_ignore(name: str, ignore_dirs=None) -> bool:
     return False
 
 
-def _read_file(filepath: str) -> str:
-    """安全读取文件内容。"""
-    try:
-        with open(filepath, encoding="utf-8", errors="replace") as f:
-            return f.read()
-    except Exception:
-        return ""
+from modules.compat import read_file_safe
+_read_file = read_file_safe
 
 
 # ── Python 专用分析 ──────────────────────────────────
@@ -1846,7 +1842,7 @@ def _detect_defects(file_info: dict) -> list:
 
 # ── 主扫描入口 ───────────────────────────────────────
 
-def scan_file(filepath: str) -> dict:
+def scan_file(filepath: str) -> CodeFileScanResult:
     """扫描单个代码文件。"""
     text = _read_file(filepath)
     if not text:

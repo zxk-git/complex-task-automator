@@ -4,6 +4,7 @@
 __all__ = [
     # ── 基础层 ──
     "compat",
+    "types",
     "diff_scanner",
     "notifier",
     "ai_refiner",
