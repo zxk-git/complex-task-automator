@@ -42,6 +42,11 @@ IMPROVEMENT_TEMPLATES = {
         "estimated_impact": 3,
         "auto_fixable": True,
         "languages": ["python"],
+        "search_queries": ["{language} docstring best practices", "PEP 257 docstring conventions"],
+        "static_references": [
+            {"title": "PEP 257 – Docstring Conventions", "url": "https://peps.python.org/pep-0257/", "credibility": "A"},
+            {"title": "Google Python Style Guide – Docstrings", "url": "https://google.github.io/styleguide/pyguide.html#38-comments-and-docstrings", "credibility": "A"}
+        ],
     },
     "add_module_docstring": {
         "category": "documentation",
@@ -49,6 +54,10 @@ IMPROVEMENT_TEMPLATES = {
         "estimated_impact": 2,
         "auto_fixable": True,
         "languages": ["python"],
+        "search_queries": ["Python module docstring best practices"],
+        "static_references": [
+            {"title": "PEP 257 – Module Docstrings", "url": "https://peps.python.org/pep-0257/#multi-line-docstrings", "credibility": "A"}
+        ],
     },
     "add_type_hints": {
         "category": "practices",
@@ -56,6 +65,11 @@ IMPROVEMENT_TEMPLATES = {
         "estimated_impact": 3,
         "auto_fixable": False,
         "languages": ["python"],
+        "search_queries": ["Python type hints best practices", "PEP 484 type annotations"],
+        "static_references": [
+            {"title": "PEP 484 – Type Hints", "url": "https://peps.python.org/pep-0484/", "credibility": "A"},
+            {"title": "mypy Documentation", "url": "https://mypy.readthedocs.io/en/stable/", "credibility": "A"}
+        ],
     },
     "add_main_guard": {
         "category": "practices",
@@ -63,6 +77,10 @@ IMPROVEMENT_TEMPLATES = {
         "estimated_impact": 2,
         "auto_fixable": True,
         "languages": ["python"],
+        "search_queries": ["Python if __name__ == __main__ best practices"],
+        "static_references": [
+            {"title": "Python Docs – __main__", "url": "https://docs.python.org/3/library/__main__.html", "credibility": "A"}
+        ],
     },
     # ── JavaScript / TypeScript ──
     "add_jsdoc": {
@@ -71,6 +89,11 @@ IMPROVEMENT_TEMPLATES = {
         "estimated_impact": 3,
         "auto_fixable": True,
         "languages": ["javascript", "typescript"],
+        "search_queries": ["JSDoc documentation best practices", "JavaScript documentation comments"],
+        "static_references": [
+            {"title": "JSDoc Official", "url": "https://jsdoc.app/", "credibility": "A"},
+            {"title": "Google JS Style – JSDoc", "url": "https://google.github.io/styleguide/jsguide.html#jsdoc", "credibility": "A"}
+        ],
     },
     "add_ts_types": {
         "category": "practices",
@@ -78,6 +101,10 @@ IMPROVEMENT_TEMPLATES = {
         "estimated_impact": 3,
         "auto_fixable": False,
         "languages": ["typescript"],
+        "search_queries": ["TypeScript type definitions best practices"],
+        "static_references": [
+            {"title": "TypeScript Handbook – Everyday Types", "url": "https://www.typescriptlang.org/docs/handbook/2/everyday-types.html", "credibility": "A"}
+        ],
     },
     "fix_module_consistency": {
         "category": "style",
@@ -85,6 +112,10 @@ IMPROVEMENT_TEMPLATES = {
         "estimated_impact": 3,
         "auto_fixable": False,
         "languages": ["javascript", "typescript"],
+        "search_queries": ["ESM vs CJS module consistency JavaScript"],
+        "static_references": [
+            {"title": "Node.js – ESM vs CJS", "url": "https://nodejs.org/api/esm.html", "credibility": "A"}
+        ],
     },
     "add_strict_mode": {
         "category": "practices",
@@ -92,6 +123,10 @@ IMPROVEMENT_TEMPLATES = {
         "estimated_impact": 1,
         "auto_fixable": True,
         "languages": ["javascript"],
+        "search_queries": ["JavaScript use strict best practices"],
+        "static_references": [
+            {"title": "MDN – Strict mode", "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Strict_mode", "credibility": "A"}
+        ],
     },
     # ── Go ──
     "add_go_doc": {
@@ -100,6 +135,11 @@ IMPROVEMENT_TEMPLATES = {
         "estimated_impact": 3,
         "auto_fixable": True,
         "languages": ["go"],
+        "search_queries": ["Go documentation comments best practices", "Effective Go documentation"],
+        "static_references": [
+            {"title": "Effective Go – Commentary", "url": "https://go.dev/doc/effective_go#commentary", "credibility": "A"},
+            {"title": "Go Doc Comments", "url": "https://go.dev/doc/comment", "credibility": "A"}
+        ],
     },
     "add_error_handling": {
         "category": "practices",
@@ -107,6 +147,11 @@ IMPROVEMENT_TEMPLATES = {
         "estimated_impact": 4,
         "auto_fixable": False,
         "languages": ["go"],
+        "search_queries": ["Go error handling best practices", "Go error wrapping"],
+        "static_references": [
+            {"title": "Effective Go – Errors", "url": "https://go.dev/doc/effective_go#errors", "credibility": "A"},
+            {"title": "Go Blog – Error handling and Go", "url": "https://go.dev/blog/error-handling-and-go", "credibility": "A"}
+        ],
     },
     "add_go_tests": {
         "category": "practices",
@@ -114,6 +159,11 @@ IMPROVEMENT_TEMPLATES = {
         "estimated_impact": 3,
         "auto_fixable": False,
         "languages": ["go"],
+        "search_queries": ["Go testing best practices", "Go table driven tests"],
+        "static_references": [
+            {"title": "Go Testing Package", "url": "https://pkg.go.dev/testing", "credibility": "A"},
+            {"title": "Go Wiki – Table Driven Tests", "url": "https://go.dev/wiki/TableDrivenTests", "credibility": "A"}
+        ],
     },
     # ── Shell ──
     "add_set_e": {
@@ -122,6 +172,11 @@ IMPROVEMENT_TEMPLATES = {
         "estimated_impact": 4,
         "auto_fixable": True,
         "languages": ["shell"],
+        "search_queries": ["Bash set -e best practices", "Shell script error handling"],
+        "static_references": [
+            {"title": "Bash Manual – The Set Builtin", "url": "https://www.gnu.org/software/bash/manual/html_node/The-Set-Builtin.html", "credibility": "A"},
+            {"title": "Google Shell Style Guide", "url": "https://google.github.io/styleguide/shellguide.html", "credibility": "A"}
+        ],
     },
     "fix_backticks": {
         "category": "style",
@@ -129,6 +184,10 @@ IMPROVEMENT_TEMPLATES = {
         "estimated_impact": 2,
         "auto_fixable": True,
         "languages": ["shell"],
+        "search_queries": ["Shell backtick vs dollar paren substitution"],
+        "static_references": [
+            {"title": "ShellCheck SC2006", "url": "https://www.shellcheck.net/wiki/SC2006", "credibility": "A"}
+        ],
     },
     "add_shebang": {
         "category": "practices",
@@ -136,6 +195,10 @@ IMPROVEMENT_TEMPLATES = {
         "estimated_impact": 2,
         "auto_fixable": True,
         "languages": ["shell"],
+        "search_queries": ["Shell script shebang best practices"],
+        "static_references": [
+            {"title": "Google Shell Style Guide – File Header", "url": "https://google.github.io/styleguide/shellguide.html#s1.1-which-shell-to-use", "credibility": "A"}
+        ],
     },
     "quote_variables": {
         "category": "style",
@@ -143,6 +206,10 @@ IMPROVEMENT_TEMPLATES = {
         "estimated_impact": 2,
         "auto_fixable": False,
         "languages": ["shell"],
+        "search_queries": ["Bash variable quoting best practices"],
+        "static_references": [
+            {"title": "ShellCheck SC2086", "url": "https://www.shellcheck.net/wiki/SC2086", "credibility": "A"}
+        ],
     },
     # ── Rust ──
     "add_rust_doc": {
@@ -151,6 +218,11 @@ IMPROVEMENT_TEMPLATES = {
         "estimated_impact": 3,
         "auto_fixable": True,
         "languages": ["rust"],
+        "search_queries": ["Rust documentation comments best practices", "Rust doc comments"],
+        "static_references": [
+            {"title": "Rust Book – Doc Comments", "url": "https://doc.rust-lang.org/book/ch14-02-publishing-to-crates-io.html#making-useful-documentation-comments", "credibility": "A"},
+            {"title": "Rust API Guidelines – Documentation", "url": "https://rust-lang.github.io/api-guidelines/documentation.html", "credibility": "A"}
+        ],
     },
     "reduce_unsafe": {
         "category": "practices",
@@ -158,6 +230,11 @@ IMPROVEMENT_TEMPLATES = {
         "estimated_impact": 4,
         "auto_fixable": False,
         "languages": ["rust"],
+        "search_queries": ["Rust unsafe code best practices", "Rust minimize unsafe"],
+        "static_references": [
+            {"title": "Rustonomicon – Unsafe", "url": "https://doc.rust-lang.org/nomicon/", "credibility": "A"},
+            {"title": "Rust Book – Unsafe Rust", "url": "https://doc.rust-lang.org/book/ch19-01-unsafe-rust.html", "credibility": "A"}
+        ],
     },
     # ── 通用 ──
     "reduce_complexity": {
@@ -166,6 +243,11 @@ IMPROVEMENT_TEMPLATES = {
         "estimated_impact": 4,
         "auto_fixable": False,
         "languages": ["*"],
+        "search_queries": ["{language} reduce cyclomatic complexity", "refactoring complex functions"],
+        "static_references": [
+            {"title": "Wikipedia – Cyclomatic Complexity", "url": "https://en.wikipedia.org/wiki/Cyclomatic_complexity", "credibility": "B"},
+            {"title": "Refactoring.Guru – Extract Method", "url": "https://refactoring.guru/extract-method", "credibility": "A"}
+        ],
     },
     "split_function": {
         "category": "structure",
@@ -173,6 +255,11 @@ IMPROVEMENT_TEMPLATES = {
         "estimated_impact": 4,
         "auto_fixable": False,
         "languages": ["*"],
+        "search_queries": ["{language} split large function refactoring"],
+        "static_references": [
+            {"title": "Refactoring.Guru – Extract Method", "url": "https://refactoring.guru/extract-method", "credibility": "A"},
+            {"title": "Clean Code – Functions", "url": "https://www.oreilly.com/library/view/clean-code-a/9780136083238/", "credibility": "A"}
+        ],
     },
     "split_file": {
         "category": "structure",
@@ -180,6 +267,10 @@ IMPROVEMENT_TEMPLATES = {
         "estimated_impact": 5,
         "auto_fixable": False,
         "languages": ["*"],
+        "search_queries": ["{language} split large file module organization"],
+        "static_references": [
+            {"title": "Refactoring.Guru – Extract Class", "url": "https://refactoring.guru/extract-class", "credibility": "A"}
+        ],
     },
     "fix_naming": {
         "category": "style",
@@ -187,6 +278,10 @@ IMPROVEMENT_TEMPLATES = {
         "estimated_impact": 1,
         "auto_fixable": True,
         "languages": ["*"],
+        "search_queries": ["{language} naming conventions best practices"],
+        "static_references": [
+            {"title": "Wikipedia – Naming Convention (programming)", "url": "https://en.wikipedia.org/wiki/Naming_convention_(programming)", "credibility": "B"}
+        ],
     },
     "remove_todos": {
         "category": "practices",
@@ -194,6 +289,10 @@ IMPROVEMENT_TEMPLATES = {
         "estimated_impact": 2,
         "auto_fixable": False,
         "languages": ["*"],
+        "search_queries": ["managing TODO comments in code"],
+        "static_references": [
+            {"title": "Google Style – TODO Comments", "url": "https://google.github.io/styleguide/cppguide.html#TODO_Comments", "credibility": "A"}
+        ],
     },
     "shorten_lines": {
         "category": "style",
@@ -201,6 +300,104 @@ IMPROVEMENT_TEMPLATES = {
         "estimated_impact": 1,
         "auto_fixable": True,
         "languages": ["*"],
+        "search_queries": ["{language} line length limit best practices"],
+        "static_references": [
+            {"title": "PEP 8 – Maximum Line Length", "url": "https://peps.python.org/pep-0008/#maximum-line-length", "credibility": "A"}
+        ],
+    },
+    # ── C/C++ ──
+    "add_doxygen": {
+        "category": "documentation",
+        "description": "为 {target} 添加 Doxygen 文档注释",
+        "estimated_impact": 3,
+        "auto_fixable": True,
+        "languages": ["c", "cpp"],
+        "search_queries": ["Doxygen documentation best practices C C++", "Doxygen comment style"],
+        "static_references": [
+            {"title": "Doxygen Manual", "url": "https://www.doxygen.nl/manual/docblocks.html", "credibility": "A"},
+            {"title": "Google C++ Style – Comments", "url": "https://google.github.io/styleguide/cppguide.html#Comments", "credibility": "A"}
+        ],
+    },
+    "add_header_guard": {
+        "category": "practices",
+        "description": "为头文件 {file} 添加 include guard",
+        "estimated_impact": 4,
+        "auto_fixable": True,
+        "languages": ["c", "cpp"],
+        "search_queries": ["C C++ include guard vs pragma once", "header guard best practices"],
+        "static_references": [
+            {"title": "Google C++ Style – #define Guard", "url": "https://google.github.io/styleguide/cppguide.html#The__define_Guard", "credibility": "A"},
+            {"title": "cppreference – include guard", "url": "https://en.cppreference.com/w/cpp/preprocessor/include", "credibility": "A"}
+        ],
+    },
+    "remove_goto": {
+        "category": "practices",
+        "description": "消除 {file} 中 {count} 处 goto 使用",
+        "estimated_impact": 5,
+        "auto_fixable": False,
+        "languages": ["c", "cpp"],
+        "search_queries": ["C goto alternatives structured programming"],
+        "static_references": [
+            {"title": "CERT C – Avoid goto", "url": "https://wiki.sei.cmu.edu/confluence/display/c/MEM12-C.+Consider+using+a+goto+chain+when+leaving+a+function+on+error+when+using+and+releasing+resources", "credibility": "A"}
+        ],
+    },
+    "reduce_malloc": {
+        "category": "practices",
+        "description": "检查 {file} 中 {count} 处手动内存分配",
+        "estimated_impact": 4,
+        "auto_fixable": False,
+        "languages": ["c", "cpp"],
+        "search_queries": ["C memory management best practices", "safe malloc usage C"],
+        "static_references": [
+            {"title": "CERT C – Memory Management", "url": "https://wiki.sei.cmu.edu/confluence/display/c/MEM00-C.+Allocate+and+free+memory+in+the+same+module%2C+at+the+same+level+of+abstraction", "credibility": "A"}
+        ],
+    },
+    # ── Java ──
+    "add_javadoc": {
+        "category": "documentation",
+        "description": "为 {target} 添加 Javadoc",
+        "estimated_impact": 3,
+        "auto_fixable": True,
+        "languages": ["java"],
+        "search_queries": ["Java Javadoc best practices", "writing effective Javadoc"],
+        "static_references": [
+            {"title": "Oracle – Javadoc Guide", "url": "https://www.oracle.com/technical-resources/articles/java/javadoc-tool.html", "credibility": "A"},
+            {"title": "Google Java Style – Javadoc", "url": "https://google.github.io/styleguide/javaguide.html#s7-javadoc", "credibility": "A"}
+        ],
+    },
+    "add_class_javadoc": {
+        "category": "documentation",
+        "description": "为类 {target} 添加 Javadoc",
+        "estimated_impact": 3,
+        "auto_fixable": True,
+        "languages": ["java"],
+        "search_queries": ["Java class documentation best practices"],
+        "static_references": [
+            {"title": "Oracle – Javadoc Guide", "url": "https://www.oracle.com/technical-resources/articles/java/javadoc-tool.html", "credibility": "A"}
+        ],
+    },
+    "add_exception_handling": {
+        "category": "practices",
+        "description": "为 {file} 添加异常处理",
+        "estimated_impact": 4,
+        "auto_fixable": False,
+        "languages": ["java"],
+        "search_queries": ["Java exception handling best practices", "Java try-catch patterns"],
+        "static_references": [
+            {"title": "Oracle – Lesson: Exceptions", "url": "https://docs.oracle.com/javase/tutorial/essential/exceptions/", "credibility": "A"},
+            {"title": "Effective Java – Exceptions", "url": "https://www.oreilly.com/library/view/effective-java-3rd/9780134686097/", "credibility": "A"}
+        ],
+    },
+    "add_override_annotation": {
+        "category": "practices",
+        "description": "为重写方法添加 @Override 注解",
+        "estimated_impact": 2,
+        "auto_fixable": True,
+        "languages": ["java"],
+        "search_queries": ["Java @Override annotation best practices"],
+        "static_references": [
+            {"title": "Oracle – @Override Annotation", "url": "https://docs.oracle.com/javase/tutorial/java/IandI/override.html", "credibility": "A"}
+        ],
     },
 }
 
@@ -345,6 +542,49 @@ def analyze_file(file_info: dict) -> list:
             improvements.append(_make_improvement(
                 "reduce_unsafe", file=fname, count=rs["unsafe_blocks"],
             ))
+
+    # ── C/C++ 专项 ──
+    elif lang in ("c", "cpp"):
+        c_info = file_info.get("c_analysis", {})
+        # Doxygen doc comments
+        for fn in c_info.get("functions", []):
+            if not fn.get("has_doc_comment"):
+                improvements.append(_make_improvement(
+                    "add_doxygen", target=f"{fname}::{fn['name']}()", line=fn["line"],
+                ))
+        # Header guard
+        ext = file_info.get("extension", "")
+        if ext in (".h", ".hpp", ".hxx") and not c_info.get("has_header_guard"):
+            improvements.append(_make_improvement("add_header_guard", file=fname))
+        # Goto
+        if c_info.get("goto_count", 0) > 0:
+            improvements.append(_make_improvement(
+                "remove_goto", file=fname, count=c_info["goto_count"],
+            ))
+        # Malloc
+        if c_info.get("malloc_count", 0) > 3:
+            improvements.append(_make_improvement(
+                "reduce_malloc", file=fname, count=c_info["malloc_count"],
+            ))
+
+    # ── Java 专项 ──
+    elif lang == "java":
+        jv = file_info.get("java_analysis", {})
+        # Javadoc for public methods
+        for m in jv.get("methods", []):
+            if m.get("visibility") == "public" and not m.get("has_doc_comment"):
+                improvements.append(_make_improvement(
+                    "add_javadoc", target=f"{fname}::{m['name']}()", line=m["line"],
+                ))
+        # Class Javadoc
+        for c in jv.get("classes", []):
+            if not c.get("has_doc_comment"):
+                improvements.append(_make_improvement(
+                    "add_class_javadoc", target=c["name"], line=c["line"],
+                ))
+        # Exception handling
+        if jv.get("exception_handling", 0) == 0 and len(jv.get("methods", [])) > 3:
+            improvements.append(_make_improvement("add_exception_handling", file=fname))
 
     # ── 通用 ──
     if file_info.get("line_count", 0) > 500:

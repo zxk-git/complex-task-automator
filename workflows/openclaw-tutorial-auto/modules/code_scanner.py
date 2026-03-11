@@ -48,6 +48,14 @@ LANG_MAP = {
     ".sh":   "shell",
     ".bash": "shell",
     ".zsh":  "shell",
+    ".c":    "c",
+    ".h":    "c",
+    ".cpp":  "cpp",
+    ".cxx":  "cpp",
+    ".cc":   "cpp",
+    ".hpp":  "cpp",
+    ".hxx":  "cpp",
+    ".java": "java",
     ".yaml": "yaml",
     ".yml":  "yaml",
     ".json": "json",
@@ -727,6 +735,311 @@ def _analyze_rust(text: str) -> dict:
     return result
 
 
+# ── C/C++ 深度分析 ───────────────────────────────────
+
+def _analyze_c_cpp(text: str, lang: str) -> dict:
+    """C / C++ 源文件深度分析。"""
+    lines = text.split("\n")
+    is_cpp = (lang == "cpp")
+
+    result = {
+        "functions": [],
+        "structs": [],
+        "classes": [],        # C++ only
+        "enums": [],
+        "includes": [],
+        "macros": [],
+        "typedefs": [],
+        "has_main": False,
+        "has_header_guard": False,
+        "doc_comments": 0,
+        "complexity_estimate": 0,
+        "goto_count": 0,
+        "malloc_count": 0,
+        "namespace": None,    # C++ only
+    }
+
+    prev_doc = False
+    in_comment_block = False
+    brace_depth = 0
+
+    for i, line in enumerate(lines, 1):
+        stripped = line.strip()
+
+        # 多行注释追踪
+        if "/*" in stripped and "*/" not in stripped:
+            in_comment_block = True
+        if "*/" in stripped:
+            in_comment_block = False
+            continue
+        if in_comment_block:
+            if stripped.startswith("*") or stripped.startswith("/**"):
+                pass  # doc comment body
+            continue
+
+        # Brace depth tracking
+        brace_depth += stripped.count("{") - stripped.count("}")
+
+        # #include
+        m = re.match(r'^\s*#include\s+[<"]([^>"]+)[>"]', stripped)
+        if m:
+            result["includes"].append({"path": m.group(1), "line": i})
+            continue
+
+        # #define macros
+        m = re.match(r"^\s*#define\s+(\w+)", stripped)
+        if m:
+            result["macros"].append({"name": m.group(1), "line": i})
+            # Header guard detection
+            name = m.group(1)
+            if name.endswith("_H") or name.endswith("_H_") or name.endswith("_HPP"):
+                result["has_header_guard"] = True
+            continue
+
+        # typedef
+        m = re.match(r"^\s*typedef\s+.+\s+(\w+)\s*;", stripped)
+        if m:
+            result["typedefs"].append({"name": m.group(1), "line": i})
+
+        # C++ namespace
+        if is_cpp:
+            m = re.match(r"^\s*namespace\s+(\w+)", stripped)
+            if m and result["namespace"] is None:
+                result["namespace"] = m.group(1)
+
+        # C++ class
+        if is_cpp:
+            m = re.match(r"^\s*(?:template\s*<[^>]*>\s*)?class\s+(\w+)(?:\s*:\s*(?:public|protected|private)\s+\w+)?", stripped)
+            if m:
+                result["classes"].append({
+                    "name": m.group(1),
+                    "line": i,
+                    "has_doc_comment": prev_doc,
+                })
+
+        # struct
+        m = re.match(r"^\s*(?:typedef\s+)?struct\s+(\w+)", stripped)
+        if m:
+            result["structs"].append({
+                "name": m.group(1),
+                "line": i,
+                "has_doc_comment": prev_doc,
+            })
+
+        # enum
+        m = re.match(r"^\s*(?:typedef\s+)?enum\s+(?:class\s+)?(\w+)", stripped)
+        if m:
+            result["enums"].append({"name": m.group(1), "line": i})
+
+        # Function detection (top-level, brace_depth <= 1)
+        if brace_depth <= 1 and not stripped.startswith("#"):
+            # Pattern: return_type func_name(params) {  or  return_type func_name(params);
+            m = re.match(
+                r"^\s*(?:static\s+|inline\s+|extern\s+|virtual\s+|const\s+)*"
+                r"(?:(?:unsigned|signed|long|short)\s+)*"
+                r"(?:\w[\w:*&<>, ]*?)\s+(\*?\w+)\s*\([^)]*\)\s*(?:const\s*)?(?:override\s*)?(?:noexcept\s*)?[{;]?\s*$",
+                stripped
+            )
+            if m:
+                name = m.group(1).lstrip("*")
+                # Skip if it looks like a control statement
+                if name not in ("if", "else", "for", "while", "switch", "return", "sizeof", "typedef"):
+                    result["functions"].append({
+                        "name": name,
+                        "line": i,
+                        "has_doc_comment": prev_doc,
+                    })
+                    if name == "main":
+                        result["has_main"] = True
+
+        # goto detection
+        if re.match(r"^\s*goto\s+\w+", stripped):
+            result["goto_count"] += 1
+
+        # malloc / calloc / realloc (manual memory management)
+        if re.search(r"\b(malloc|calloc|realloc)\s*\(", stripped):
+            result["malloc_count"] += 1
+
+        # Doc comments (Doxygen style: /** ... */ or ///)
+        if stripped.startswith("/**") or stripped.startswith("///"):
+            prev_doc = True
+            result["doc_comments"] += 1
+        elif stripped.startswith("//") or stripped.startswith("*"):
+            pass  # Keep prev_doc if multi-line doc
+        else:
+            prev_doc = False
+
+        # Complexity: branching
+        if re.match(r"^\s*(if|else\s+if|for|while|switch|case|do)\b", stripped):
+            result["complexity_estimate"] += 1
+
+    return result
+
+
+# ── Java 深度分析 ────────────────────────────────────
+
+def _analyze_java(text: str) -> dict:
+    """Java 源文件深度分析。"""
+    lines = text.split("\n")
+
+    result = {
+        "package": None,
+        "classes": [],
+        "interfaces": [],
+        "enums": [],
+        "methods": [],
+        "fields": [],
+        "imports": [],
+        "annotations": [],
+        "has_main": False,
+        "implements_count": 0,
+        "extends_count": 0,
+        "doc_comments": 0,
+        "complexity_estimate": 0,
+        "exception_handling": 0,   # try-catch count
+        "synchronized_count": 0,
+        "is_abstract_class": False,
+    }
+
+    prev_doc = False
+    in_comment_block = False
+    brace_depth = 0
+    current_class = None
+
+    for i, line in enumerate(lines, 1):
+        stripped = line.strip()
+
+        # 多行注释追踪
+        if "/*" in stripped and "*/" not in stripped:
+            in_comment_block = True
+            if stripped.startswith("/**"):
+                prev_doc = True
+                result["doc_comments"] += 1
+            continue
+        if "*/" in stripped:
+            in_comment_block = False
+            continue
+        if in_comment_block:
+            if stripped.startswith("*"):
+                result["doc_comments"] += 1
+            continue
+
+        brace_depth += stripped.count("{") - stripped.count("}")
+
+        # package
+        m = re.match(r"^\s*package\s+([\w.]+)\s*;", stripped)
+        if m:
+            result["package"] = m.group(1)
+            continue
+
+        # import
+        m = re.match(r"^\s*import\s+(?:static\s+)?([\w.*]+)\s*;", stripped)
+        if m:
+            result["imports"].append({"path": m.group(1), "line": i, "is_static": "static" in line})
+            continue
+
+        # annotations
+        m = re.match(r"^\s*@(\w+)", stripped)
+        if m:
+            result["annotations"].append({"name": m.group(1), "line": i})
+            continue
+
+        # class declaration
+        m = re.match(
+            r"^\s*(?:public\s+|private\s+|protected\s+)?(?:static\s+)?(?:final\s+)?(?:abstract\s+)?"
+            r"class\s+(\w+)(?:<[^>]+>)?\s*(?:extends\s+(\w+))?\s*(?:implements\s+(.+?))?\s*\{?",
+            stripped
+        )
+        if m:
+            cls_name = m.group(1)
+            result["classes"].append({
+                "name": cls_name,
+                "line": i,
+                "has_doc_comment": prev_doc,
+                "extends": m.group(2),
+                "implements": [x.strip() for x in m.group(3).split(",")] if m.group(3) else [],
+            })
+            if m.group(2):
+                result["extends_count"] += 1
+            if m.group(3):
+                result["implements_count"] += len(result["classes"][-1]["implements"])
+            if "abstract " in stripped:
+                result["is_abstract_class"] = True
+            current_class = cls_name
+            prev_doc = False
+            continue
+
+        # interface declaration
+        m = re.match(
+            r"^\s*(?:public\s+|private\s+|protected\s+)?interface\s+(\w+)",
+            stripped
+        )
+        if m:
+            result["interfaces"].append({
+                "name": m.group(1),
+                "line": i,
+                "has_doc_comment": prev_doc,
+            })
+            prev_doc = False
+            continue
+
+        # enum declaration
+        m = re.match(
+            r"^\s*(?:public\s+|private\s+|protected\s+)?enum\s+(\w+)",
+            stripped
+        )
+        if m:
+            result["enums"].append({"name": m.group(1), "line": i})
+            prev_doc = False
+            continue
+
+        # method declaration
+        m = re.match(
+            r"^\s*(?:public|private|protected)?\s*(?:static\s+)?(?:final\s+)?(?:synchronized\s+)?(?:abstract\s+)?"
+            r"(?:[\w<>\[\],.? ]+?)\s+(\w+)\s*\([^)]*\)\s*(?:throws\s+[\w,\s]+)?\s*[{;]",
+            stripped
+        )
+        if m:
+            name = m.group(1)
+            if name not in ("if", "for", "while", "switch", "catch", "return", "new", "class"):
+                result["methods"].append({
+                    "name": name,
+                    "line": i,
+                    "has_doc_comment": prev_doc,
+                    "is_static": "static " in stripped,
+                    "visibility": "public" if "public " in stripped else
+                                  "private" if "private " in stripped else
+                                  "protected" if "protected " in stripped else "package",
+                })
+                if name == "main" and "static " in stripped:
+                    result["has_main"] = True
+                if "synchronized " in stripped:
+                    result["synchronized_count"] += 1
+            prev_doc = False
+            continue
+
+        # try-catch
+        if re.match(r"^\s*try\s*\{", stripped) or re.match(r"^\s*catch\s*\(", stripped):
+            result["exception_handling"] += 1
+
+        # Javadoc / doc comment lines
+        if stripped.startswith("/**"):
+            prev_doc = True
+            result["doc_comments"] += 1
+        elif stripped.startswith("*/") or stripped.startswith("*"):
+            pass  # keep prev_doc
+        elif stripped.startswith("//"):
+            pass
+        else:
+            prev_doc = False
+
+        # Complexity
+        if re.match(r"^\s*(if|else\s+if|for|while|switch|case|do|catch)\b", stripped):
+            result["complexity_estimate"] += 1
+
+    return result
+
+
 # ── 通用分析 (fallback) ──────────────────────────────
 
 def _analyze_generic(text: str, lang: str) -> dict:
@@ -750,6 +1063,10 @@ def _analyze_generic(text: str, lang: str) -> dict:
     elif lang == "go":
         pass
     elif lang == "rust":
+        pass
+    elif lang in ("c", "cpp"):
+        pass
+    elif lang == "java":
         pass
     elif lang == "ruby":
         for i, line in enumerate(lines, 1):
@@ -802,6 +1119,8 @@ def compute_code_score(file_info: dict) -> dict:
     go = file_info.get("go_analysis", {})
     sh = file_info.get("shell_analysis", {})
     rs = file_info.get("rust_analysis", {})
+    cc = file_info.get("c_analysis", {})
+    jv = file_info.get("java_analysis", {})
     generic = file_info.get("generic_analysis", {})
 
     # ── Helper: 获取所有函数列表 ──
@@ -815,6 +1134,10 @@ def compute_code_score(file_info: dict) -> dict:
         all_funcs = sh.get("functions", [])
     elif lang == "rust":
         all_funcs = rs.get("functions", [])
+    elif lang in ("c", "cpp"):
+        all_funcs = cc.get("functions", [])
+    elif lang == "java":
+        all_funcs = jv.get("methods", [])
     else:
         all_funcs = generic.get("functions", [])
 
@@ -824,16 +1147,14 @@ def compute_code_score(file_info: dict) -> dict:
         d1 += 5
     elif len(all_funcs) > 0:
         d1 += 2
-    # 模块大小适中
     if 50 <= loc <= 500:
         d1 += 5
     elif 10 <= loc <= 1000:
         d1 += 3
     elif loc > 0:
         d1 += 1
-    # 函数长度合理 (Python)
-    if py.get("functions"):
-        avg_len = sum(f.get("line_count", 0) for f in py["functions"]) / max(len(py["functions"]), 1)
+    if all_funcs:
+        avg_len = sum(f.get("line_count", 0) for f in all_funcs) / max(len(all_funcs), 1)
         if avg_len <= 30:
             d1 += 5
         elif avg_len <= 60:
@@ -844,7 +1165,9 @@ def compute_code_score(file_info: dict) -> dict:
         d1 += 3
     # 类 / 结构体数量合理
     type_count = len(py.get("classes", [])) + len(go.get("structs", [])) + \
-                 len(js.get("classes", [])) + len(rs.get("structs", []))
+                 len(js.get("classes", [])) + len(rs.get("structs", [])) + \
+                 len(cc.get("structs", [])) + len(cc.get("classes", [])) + \
+                 len(jv.get("classes", [])) + len(jv.get("interfaces", []))
     if 0 <= type_count <= 5:
         d1 += 5
     elif type_count <= 10:
@@ -852,11 +1175,22 @@ def compute_code_score(file_info: dict) -> dict:
     else:
         d1 += 1
     # JS/TS: module type consistency
+        d1 += 1
+    # JS/TS: module type consistency
     if lang in ("javascript", "typescript"):
         if js.get("module_type") == "mixed":
             d1 -= 2
     # Go: package declaration
     if lang == "go" and go.get("package"):
+        d1 += 2
+    # C/C++: header guard
+    if lang in ("c", "cpp") and cc.get("has_header_guard"):
+        d1 += 2
+    # C++: namespace usage
+    if lang == "cpp" and cc.get("namespace"):
+        d1 += 1
+    # Java: package declaration
+    if lang == "java" and jv.get("package"):
         d1 += 2
     dims["structure"] = min(d1, 20)
 
@@ -883,7 +1217,6 @@ def compute_code_score(file_info: dict) -> dict:
         elif comment_ratio > 0:
             d2 += 1
     elif lang in ("javascript", "typescript"):
-        # JSDoc coverage
         jsdoc = js.get("jsdoc_count", 0)
         func_count = len(js.get("functions", []))
         if func_count > 0:
@@ -891,21 +1224,15 @@ def compute_code_score(file_info: dict) -> dict:
             d2 += round(10 * jsdoc_ratio)
         else:
             d2 += 5
-        # TypeScript types coverage
         if lang == "typescript":
             has_types = len(js.get("interfaces", [])) + len(js.get("type_aliases", []))
-            if has_types > 0:
-                d2 += 5
-            else:
-                d2 += 2
-        # Comment density
+            d2 += 5 if has_types > 0 else 2
         comment_ratio = generic.get("comment_lines", 0) / max(loc, 1)
         if comment_ratio >= 0.05:
             d2 += 5
         elif comment_ratio > 0:
             d2 += 2
     elif lang == "go":
-        # Go doc comments for exported symbols
         exported = [f for f in go.get("functions", []) if f.get("is_exported")]
         exported += [m for m in go.get("methods", []) if m.get("is_exported")]
         exported_types = [s for s in go.get("structs", []) if s.get("is_exported")]
@@ -924,7 +1251,6 @@ def compute_code_score(file_info: dict) -> dict:
         elif comment_ratio > 0:
             d2 += 2
     elif lang == "rust":
-        # Rust doc comments
         pub_items = [f for f in rs.get("functions", []) if f.get("is_public")]
         pub_items += [s for s in rs.get("structs", []) if s.get("is_public")]
         if pub_items:
@@ -937,8 +1263,45 @@ def compute_code_score(file_info: dict) -> dict:
             d2 += 8
         elif doc_count > 0:
             d2 += 4
+    elif lang in ("c", "cpp"):
+        doc_count = cc.get("doc_comments", 0)
+        funcs = cc.get("functions", [])
+        if funcs:
+            doc_ratio = sum(1 for f in funcs if f.get("has_doc_comment")) / len(funcs)
+            d2 += round(10 * doc_ratio)
+        else:
+            d2 += 5
+        if doc_count >= 5:
+            d2 += 5
+        elif doc_count > 0:
+            d2 += 3
+        comment_ratio = generic.get("comment_lines", 0) / max(loc, 1)
+        if comment_ratio >= 0.1:
+            d2 += 5
+        elif comment_ratio >= 0.05:
+            d2 += 3
+        elif comment_ratio > 0:
+            d2 += 1
+    elif lang == "java":
+        methods = jv.get("methods", [])
+        classes = jv.get("classes", [])
+        all_items = methods + classes
+        if all_items:
+            doc_ratio = sum(1 for x in all_items if x.get("has_doc_comment")) / len(all_items)
+            d2 += round(12 * doc_ratio)
+        else:
+            d2 += 6
+        doc_count = jv.get("doc_comments", 0)
+        if doc_count >= 5:
+            d2 += 5
+        elif doc_count > 0:
+            d2 += 3
+        comment_ratio = generic.get("comment_lines", 0) / max(loc, 1)
+        if comment_ratio >= 0.05:
+            d2 += 3
+        elif comment_ratio > 0:
+            d2 += 1
     elif lang == "shell":
-        # Shell: comments density (functions are often undocumented)
         comment_ratio = generic.get("comment_lines", 0) / max(loc, 1)
         if comment_ratio >= 0.15:
             d2 += 12
@@ -946,10 +1309,9 @@ def compute_code_score(file_info: dict) -> dict:
             d2 += 8
         elif comment_ratio >= 0.03:
             d2 += 4
-        # Shebang
         if sh.get("shebang"):
             d2 += 4
-        d2 += 4  # baseline for shell
+        d2 += 4
     else:
         comment_ratio = generic.get("comment_lines", 0) / max(loc, 1)
         if comment_ratio >= 0.1:
@@ -982,35 +1344,51 @@ def compute_code_score(file_info: dict) -> dict:
         elif avg_cc > 5:
             d3 -= 2
     elif lang in ("javascript", "typescript"):
-        cc = js.get("complexity_estimate", 0)
-        if cc > 30:
+        cc_val = js.get("complexity_estimate", 0)
+        if cc_val > 30:
             d3 -= 10
-        elif cc > 15:
+        elif cc_val > 15:
             d3 -= 5
-        elif cc > 8:
+        elif cc_val > 8:
             d3 -= 2
     elif lang == "go":
-        cc = go.get("complexity_estimate", 0)
-        if cc > 25:
+        cc_val = go.get("complexity_estimate", 0)
+        if cc_val > 25:
             d3 -= 10
-        elif cc > 12:
+        elif cc_val > 12:
             d3 -= 5
-        elif cc > 6:
+        elif cc_val > 6:
             d3 -= 2
     elif lang == "shell":
-        cc = sh.get("complexity_estimate", 0)
-        if cc > 20:
+        cc_val = sh.get("complexity_estimate", 0)
+        if cc_val > 20:
             d3 -= 10
-        elif cc > 10:
+        elif cc_val > 10:
             d3 -= 5
     elif lang == "rust":
-        cc = rs.get("complexity_estimate", 0)
-        if cc > 25:
+        cc_val = rs.get("complexity_estimate", 0)
+        if cc_val > 25:
             d3 -= 10
-        elif cc > 12:
+        elif cc_val > 12:
             d3 -= 5
-
-    # 嵌套层级（通用）
+    elif lang in ("c", "cpp"):
+        cc_val = cc.get("complexity_estimate", 0)
+        if cc_val > 30:
+            d3 -= 10
+        elif cc_val > 15:
+            d3 -= 5
+        elif cc_val > 8:
+            d3 -= 2
+        if cc.get("goto_count", 0) > 0:
+            d3 -= min(5, cc["goto_count"] * 2)
+    elif lang == "java":
+        cc_val = jv.get("complexity_estimate", 0)
+        if cc_val > 30:
+            d3 -= 10
+        elif cc_val > 15:
+            d3 -= 5
+        elif cc_val > 8:
+            d3 -= 2
     max_indent = 0
     for line in file_info.get("_text", "").split("\n"):
         if line.strip():
@@ -1031,7 +1409,6 @@ def compute_code_score(file_info: dict) -> dict:
         d4 += 2
     else:
         d4 -= min(5, long_lines // 5)
-    # Python naming
     if lang == "python":
         bad_names = 0
         for f in py.get("functions", []):
@@ -1042,19 +1419,36 @@ def compute_code_score(file_info: dict) -> dict:
                 bad_names += 1
         if bad_names > 0:
             d4 -= min(5, bad_names)
-    # Go naming (exported = PascalCase, unexported = camelCase)
     elif lang == "go":
         bad = 0
         for f in go.get("functions", []):
             n = f["name"]
             if n[0].isupper() and "_" in n:
-                bad += 1  # Go exported shouldn't use underscores
+                bad += 1
         if bad > 0:
             d4 -= min(3, bad)
-    # Shell: backticks penalty
     elif lang == "shell":
         if sh.get("uses_backticks"):
             d4 -= 2
+    elif lang in ("c", "cpp"):
+        bad = 0
+        for m in cc.get("macros", []):
+            if not re.match(r"^[A-Z][A-Z0-9_]*$", m["name"]):
+                bad += 1
+        if bad > 0:
+            d4 -= min(3, bad)
+        if cc.get("goto_count", 0) > 0:
+            d4 -= 2
+    elif lang == "java":
+        bad = 0
+        for c in jv.get("classes", []):
+            if not re.match(r"^[A-Z][a-zA-Z0-9]*$", c["name"]):
+                bad += 1
+        for m in jv.get("methods", []):
+            if not re.match(r"^[a-z][a-zA-Z0-9]*$", m["name"]):
+                bad += 1
+        if bad > 0:
+            d4 -= min(5, bad)
     dims["style"] = max(0, min(d4, 20))
 
     # ── D5: 工程实践 (20 分) ──
@@ -1077,94 +1471,107 @@ def compute_code_score(file_info: dict) -> dict:
         elif len(star_imports) <= 1:
             d5 += 2
     elif lang in ("javascript", "typescript"):
-        # Strict mode or ESM
         if js.get("has_strict_mode") or js.get("module_type") == "esm":
             d5 += 4
-        # TypeScript-specific: type usage
         if lang == "typescript":
             types_count = len(js.get("interfaces", [])) + len(js.get("type_aliases", []))
-            if types_count > 0:
-                d5 += 4
-            else:
-                d5 += 1
+            d5 += 4 if types_count > 0 else 1
         else:
             d5 += 2
-        # No TODOs
         todos = generic.get("todo_count", 0)
         if todos == 0:
             d5 += 4
         elif todos <= 2:
             d5 += 2
-        # Exports defined
         if js.get("exports"):
             d5 += 3
-        # Consistent module type
         if js.get("module_type") in ("esm", "cjs"):
             d5 += 3
         elif js.get("module_type") is None:
             d5 += 2
     elif lang == "go":
-        # Error handling
         funcs_count = len(go.get("functions", [])) + len(go.get("methods", []))
         err_checks = go.get("error_checks", 0)
         if funcs_count > 0 and err_checks > 0:
             d5 += 5
         elif err_checks > 0:
             d5 += 3
-        # Test functions
         if go.get("test_functions"):
             d5 += 5
-        # No TODOs
         if generic.get("todo_count", 0) == 0:
             d5 += 4
         elif generic.get("todo_count", 0) <= 2:
             d5 += 2
-        # init function
         if go.get("has_init"):
             d5 += 3
-        # Package docs
         if go.get("package"):
             d5 += 3
     elif lang == "shell":
-        # set -e
         if sh.get("uses_set_e"):
             d5 += 5
-        # set -o pipefail
         if sh.get("uses_pipefail"):
             d5 += 3
-        # set -u
         if sh.get("uses_set_u"):
             d5 += 3
-        # No backticks
         if not sh.get("uses_backticks"):
             d5 += 3
-        # Few unquoted vars
         uq = sh.get("unquoted_vars", 0)
         if uq == 0:
             d5 += 4
         elif uq <= 3:
             d5 += 2
-        # Shebang
         if sh.get("shebang"):
             d5 += 2
     elif lang == "rust":
-        # unsafe usage
         if rs.get("unsafe_blocks", 0) == 0:
             d5 += 6
         elif rs.get("unsafe_blocks", 0) <= 1:
             d5 += 3
-        # doc comments
         if rs.get("doc_comments", 0) >= 3:
             d5 += 4
-        # traits / impl
         if rs.get("traits"):
             d5 += 3
-        # no TODOs
         if generic.get("todo_count", 0) == 0:
             d5 += 4
         elif generic.get("todo_count", 0) <= 2:
             d5 += 2
         d5 += 3
+    elif lang in ("c", "cpp"):
+        if cc.get("has_header_guard"):
+            d5 += 3
+        if cc.get("goto_count", 0) == 0:
+            d5 += 4
+        elif cc.get("goto_count", 0) <= 1:
+            d5 += 2
+        if cc.get("malloc_count", 0) == 0:
+            d5 += 4
+        elif cc.get("malloc_count", 0) <= 3:
+            d5 += 2
+        if lang == "cpp":
+            if cc.get("namespace"):
+                d5 += 3
+            if cc.get("classes"):
+                d5 += 2
+        if generic.get("todo_count", 0) == 0:
+            d5 += 4
+        elif generic.get("todo_count", 0) <= 2:
+            d5 += 2
+    elif lang == "java":
+        if jv.get("exception_handling", 0) > 0:
+            d5 += 4
+        if jv.get("has_main"):
+            d5 += 2
+        if jv.get("interfaces"):
+            d5 += 3
+        if jv.get("implements_count", 0) > 0:
+            d5 += 3
+        if generic.get("todo_count", 0) == 0:
+            d5 += 4
+        elif generic.get("todo_count", 0) <= 2:
+            d5 += 2
+        if jv.get("annotations"):
+            d5 += 2
+        d5 += 2
     else:
         d5 += 10
         if generic.get("todo_count", 0) == 0:
@@ -1175,7 +1582,6 @@ def compute_code_score(file_info: dict) -> dict:
 
     total = sum(dims.values())
 
-    # 缺陷惩罚
     penalties = 0
     defects = file_info.get("defects", [])
     for d in defects:
@@ -1207,7 +1613,6 @@ def compute_code_score(file_info: dict) -> dict:
         "grade": grade,
     }
 
-
 # ── 缺陷检测 ────────────────────────────────────────
 
 def _detect_defects(file_info: dict) -> list:
@@ -1218,6 +1623,8 @@ def _detect_defects(file_info: dict) -> list:
     go = file_info.get("go_analysis", {})
     sh = file_info.get("shell_analysis", {})
     rs = file_info.get("rust_analysis", {})
+    cc = file_info.get("c_analysis", {})
+    jv = file_info.get("java_analysis", {})
     generic = file_info.get("generic_analysis", {})
     loc = file_info.get("line_count", 0)
     lang = file_info.get("language", "")
@@ -1305,16 +1712,69 @@ def _detect_defects(file_info: dict) -> list:
         if funcs_without_doc > 5 and jsdoc < funcs_without_doc * 0.3:
             defects.append({
                 "type": "low_jsdoc_coverage", "severity": "minor",
-                "message": f"JSDoc 覆盖率低 ({jsdoc}/{funcs_without_doc})",
+                "message": f"JSDoc 覆盖率低：{jsdoc}/{funcs_without_doc} 函数",
             })
-        # TypeScript: 缺少类型定义
-        if lang == "typescript":
-            types = len(js.get("interfaces", [])) + len(js.get("type_aliases", []))
-            if types == 0 and loc > 50:
+    # ── C/C++ 专项 ──
+    elif lang in ("c", "cpp"):
+        # goto 使用
+        if cc.get("goto_count", 0) > 0:
+            defects.append({
+                "type": "uses_goto", "severity": "major",
+                "message": f"使用了 goto ({cc['goto_count']} 次)，破坏控制流",
+            })
+        # 大量手动内存管理
+        if cc.get("malloc_count", 0) > 5:
+            defects.append({
+                "type": "excessive_malloc", "severity": "major",
+                "message": f"大量手动内存分配 ({cc['malloc_count']} 处)，注意内存泄漏",
+            })
+        # 缺少头文件保护
+        ext = file_info.get("extension", "")
+        if ext in (".h", ".hpp", ".hxx") and not cc.get("has_header_guard"):
+            defects.append({
+                "type": "missing_header_guard", "severity": "major",
+                "message": "头文件缺少 include guard (#ifndef / #pragma once)",
+            })
+        # 函数缺少文档注释
+        undoc = [f for f in cc.get("functions", []) if not f.get("has_doc_comment")]
+        if len(undoc) > 5:
+            defects.append({
+                "type": "low_doc_coverage", "severity": "minor",
+                "message": f"{len(undoc)} 个函数缺少 Doxygen 文档注释",
+            })
+
+    # Java 专项
+    elif lang == "java":
+        # 缺少 Javadoc
+        methods = jv.get("methods", [])
+        pub_no_doc = [m for m in methods if m.get("visibility") == "public" and not m.get("has_doc_comment")]
+        if pub_no_doc:
+            for m in pub_no_doc[:3]:
                 defects.append({
-                    "type": "no_type_definitions", "severity": "minor",
-                    "message": "TypeScript 文件缺少 interface/type 定义",
+                    "type": "missing_javadoc", "severity": "minor",
+                    "message": f"公共方法 {m['name']}() 缺少 Javadoc",
+                    "line": m["line"],
                 })
+        # 类缺少 Javadoc
+        for c in jv.get("classes", []):
+            if not c.get("has_doc_comment"):
+                defects.append({
+                    "type": "missing_class_javadoc", "severity": "minor",
+                    "message": f"类 {c['name']} 缺少 Javadoc",
+                    "line": c["line"],
+                })
+        # 未处理异常
+        if jv.get("exception_handling", 0) == 0 and len(methods) > 3:
+            defects.append({
+                "type": "no_exception_handling", "severity": "minor",
+                "message": "未发现 try-catch 异常处理",
+            })
+        # 方法过多
+        if len(methods) > 30:
+            defects.append({
+                "type": "too_many_methods", "severity": "major",
+                "message": f"方法过多 ({len(methods)} 个)，建议拆分类",
+            })
 
     # Go 专项
     elif lang == "go":
@@ -1434,12 +1894,10 @@ def scan_file(filepath: str) -> dict:
     # Go 深度分析
     elif lang == "go":
         info["go_analysis"] = _analyze_go(text)
-    # Shell 深度分析
-    elif lang == "shell":
-        info["shell_analysis"] = _analyze_shell(text)
-    # Rust 基础分析
     elif lang == "rust":
         info["rust_analysis"] = _analyze_rust(text)
+    # C/C++ 深度分析
+    elif lang in ("c", "cpp"):(text)
 
     # 通用分析（所有语言基础指标）
     info["generic_analysis"] = _analyze_generic(text, lang)

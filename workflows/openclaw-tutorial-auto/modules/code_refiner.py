@@ -497,6 +497,132 @@ def add_rust_doc_comments(text: str) -> tuple:
     return "\n".join(lines), changes
 
 
+# ── C/C++ 自动修复 ────────────────────────────────────
+
+def add_doxygen_comments(text: str) -> tuple:
+    """为缺少 Doxygen 文档的函数添加 /** */ 注释。"""
+    lines = text.split("\n")
+    insertions = []
+    changes = 0
+
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        indent = line[:len(line) - len(line.lstrip())]
+
+        # Function definition pattern (skip macros and control flow)
+        m = re.match(
+            r"^\s*(?:static\s+|inline\s+|extern\s+|virtual\s+|const\s+)*"
+            r"(?:(?:unsigned|signed|long|short)\s+)*"
+            r"(?:\w[\w:*&<>, ]*?)\s+(\*?\w+)\s*\(([^)]*)\)\s*(?:const\s*)?(?:override\s*)?(?:noexcept\s*)?[{]?\s*$",
+            stripped
+        )
+        if m:
+            name = m.group(1).lstrip("*")
+            if name in ("if", "else", "for", "while", "switch", "return", "sizeof"):
+                continue
+            # Check if already has doc comment
+            if i > 0 and (lines[i - 1].strip().startswith("/**")
+                          or lines[i - 1].strip().startswith("*/")):
+                continue
+            params = m.group(2).strip()
+            doc_lines = [f"{indent}/**"]
+            doc_lines.append(f"{indent} * @brief TODO: describe {name}.")
+            if params:
+                for p in params.split(","):
+                    p = p.strip()
+                    parts = p.split()
+                    if parts:
+                        pname = parts[-1].lstrip("*&")
+                        if pname:
+                            doc_lines.append(f"{indent} * @param {pname} TODO: description")
+            doc_lines.append(f"{indent} */")
+            insertions.append((i, "\n".join(doc_lines)))
+            changes += 1
+
+    for line_idx, doc in sorted(insertions, reverse=True):
+        lines.insert(line_idx, doc)
+
+    return "\n".join(lines), changes
+
+
+def add_header_guard(filepath: str, text: str) -> tuple:
+    """为头文件添加 #ifndef include guard。"""
+    lines = text.split("\n")
+
+    # Check if already has guard
+    for line in lines[:10]:
+        stripped = line.strip()
+        if stripped.startswith("#ifndef ") or stripped.startswith("#pragma once"):
+            return text, 0
+
+    # Generate guard name from filename
+    fname = os.path.basename(filepath)
+    guard = re.sub(r"[^A-Z0-9]", "_", fname.upper()) + "_"
+
+    header = [f"#ifndef {guard}", f"#define {guard}", ""]
+    footer = ["", f"#endif  // {guard}"]
+
+    new_text = "\n".join(header) + "\n" + text.rstrip("\n") + "\n".join(footer) + "\n"
+    return new_text, 1
+
+
+# ── Java 自动修复 ─────────────────────────────────────
+
+def add_javadoc(filepath: str, text: str) -> tuple:
+    """为缺少 Javadoc 的公共方法和类添加文档注释。"""
+    lines = text.split("\n")
+    insertions = []
+    changes = 0
+
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        indent = line[:len(line) - len(line.lstrip())]
+
+        # Class / interface
+        m = re.match(
+            r"^\s*(?:public\s+)?(?:abstract\s+|final\s+)?(?:class|interface|enum)\s+(\w+)",
+            stripped
+        )
+        if m:
+            if i > 0 and lines[i - 1].strip().endswith("*/"):
+                continue
+            name = m.group(1)
+            doc = [f"{indent}/**", f"{indent} * {name} — TODO: add description.", f"{indent} */"]
+            insertions.append((i, "\n".join(doc)))
+            changes += 1
+            continue
+
+        # Public method
+        m = re.match(
+            r"^\s*public\s+(?:static\s+)?(?:final\s+)?(?:synchronized\s+)?(?:abstract\s+)?"
+            r"(?:[\w<>\[\],.? ]+?)\s+(\w+)\s*\(([^)]*)\)\s*(?:throws\s+[\w,\s]+)?\s*[{;]",
+            stripped
+        )
+        if m:
+            name = m.group(1)
+            if name in ("if", "for", "while", "switch", "return", "new", "class"):
+                continue
+            if i > 0 and lines[i - 1].strip().endswith("*/"):
+                continue
+            params_str = m.group(2).strip()
+            doc = [f"{indent}/**", f"{indent} * {name} — TODO: add description."]
+            if params_str:
+                for p in params_str.split(","):
+                    p = p.strip()
+                    parts = p.split()
+                    if len(parts) >= 2:
+                        pname = parts[-1]
+                        doc.append(f"{indent} * @param {pname} TODO: description")
+            doc.append(f"{indent} */")
+            insertions.append((i, "\n".join(doc)))
+            changes += 1
+
+    for line_idx, doc in sorted(insertions, reverse=True):
+        lines.insert(line_idx, doc)
+
+    return "\n".join(lines), changes
+
+
 # ── 主入口 ───────────────────────────────────────────
 
 def refine_file(filepath: str, improvements: list = None) -> dict:
@@ -581,6 +707,27 @@ def refine_file(filepath: str, improvements: list = None) -> dict:
         if n:
             total_changes += n
             applied.append(f"add_rust_doc ({n})")
+
+    # ── C/C++ ──
+    elif ext in (".c", ".cpp", ".cxx", ".cc", ".h", ".hpp", ".hxx"):
+        text, n = add_doxygen_comments(text)
+        if n:
+            total_changes += n
+            applied.append(f"add_doxygen ({n})")
+
+        # Header guard for header files
+        if ext in (".h", ".hpp", ".hxx"):
+            text, n = add_header_guard(filepath, text)
+            if n:
+                total_changes += 1
+                applied.append("add_header_guard")
+
+    # ── Java ──
+    elif ext == ".java":
+        text, n = add_javadoc(filepath, text)
+        if n:
+            total_changes += n
+            applied.append(f"add_javadoc ({n})")
 
     # 写回
     if text != original:
