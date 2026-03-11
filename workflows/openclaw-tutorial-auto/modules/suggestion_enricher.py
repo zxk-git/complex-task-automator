@@ -294,16 +294,23 @@ def enrich_suggestions(analysis_report: dict,
         total_refs += len(imp_refs)
         web_refs += sum(1 for r in imp_refs if r.get("source_engine"))
 
-    # 汇总统计
+    # 汇总统计 (包含去重计数)
+    all_urls = set()
+    for imp in improvements:
+        for r in imp.get("references", []):
+            all_urls.add(r.get("url", "").rstrip("/").lower())
+    unique_count = len(all_urls)
+
     analysis_report["enrichment"] = {
         "total_references": total_refs,
+        "unique_references": unique_count,
         "web_search_refs": web_refs,
         "static_refs": total_refs - web_refs,
         "web_search_enabled": use_web_search and _web_search_available,
         "unique_templates_enriched": len(ref_cache),
     }
 
-    log.info(f"引用增强完成: {total_refs} 条引用 "
+    log.info(f"引用增强完成: {unique_count} 条唯一引用 ({total_refs} 次附加) "
              f"(静态:{total_refs - web_refs}, Web:{web_refs}), "
              f"覆盖 {len(ref_cache)} 种建议类型")
 

@@ -165,7 +165,7 @@ class CodePipeline:
         enriched = code_enrich(analysis_report, use_web_search=use_web)
         save_json(os.path.join(self.output_dir, "code-analysis-report.json"), enriched)
         e = enriched.get("enrichment", {})
-        log.info(f"  引用: {e.get('total_references', 0)} 条 "
+        log.info(f"  引用: {e.get('unique_references', e.get('total_references', 0))} 条唯一 "
                  f"(静态:{e.get('static_refs', 0)}, Web:{e.get('web_search_refs', 0)})")
         log.info(f"  覆盖: {e.get('unique_templates_enriched', 0)} 种建议类型")
         return enriched
@@ -328,9 +328,10 @@ class CodePipeline:
         # 最佳实践参考
         enrichment = analysis.get("enrichment", {})
         if enrichment.get("total_references", 0) > 0:
+            unique_refs = enrichment.get('unique_references', enrichment.get('total_references', 0))
             lines.extend([
                 "",
-                f"## 📚 最佳实践参考 ({enrichment.get('total_references', 0)} 条)",
+                f"## 📚 最佳实践参考 ({unique_refs} 条唯一引用)",
                 "",
                 f"- 静态引用: **{enrichment.get('static_refs', 0)}** 条",
                 f"- Web 搜索: **{enrichment.get('web_search_refs', 0)}** 条",
@@ -521,7 +522,8 @@ footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid #e2e8f0;
         # 最佳实践参考
         enrichment = analysis.get("enrichment", {})
         if enrichment.get("total_references", 0) > 0:
-            h.append(f'<h2>📚 最佳实践参考 ({enrichment.get("total_references", 0)} 条)</h2>')
+            unique_refs = enrichment.get('unique_references', enrichment.get('total_references', 0))
+            h.append(f'<h2>📚 最佳实践参考 ({unique_refs} 条唯一引用)</h2>')
             h.append(f'<p>静态引用: <b>{enrichment.get("static_refs", 0)}</b> | '
                      f'Web 搜索: <b>{enrichment.get("web_search_refs", 0)}</b></p>')
             seen_urls = set()
