@@ -285,7 +285,7 @@ tasks:
       env:
         PROJECT_DIR: "${PROJECT_DIR}"
         OUTPUT_DIR: "${OUTPUT_DIR}"
-        EXPECTED_CHAPTERS: "13"
+        EXPECTED_CHAPTERS: "21"
     depends_on: [archive]
     timeout: 30
     on_failure: continue
