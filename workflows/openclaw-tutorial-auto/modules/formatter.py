@@ -39,6 +39,32 @@ def format_chapter(filepath: str) -> dict:
         fixes.append({"type": "quad_backtick", "count": len(quad_backtick) // 2,
                        "fix": "replaced ```` with ```"})
 
+    # ── 1b. 修复代码块关闭标记损坏 ──
+    lines_raw = text.split("\n")
+    new_raw = []
+    in_code = False
+    close_fixes = 0
+    for ln in lines_raw:
+        stripped = ln.strip()
+        if stripped.startswith("```"):
+            lang = stripped[3:].strip()
+            if not in_code:
+                in_code = True
+                new_raw.append(ln)
+            elif lang:
+                new_raw.append("```")
+                close_fixes += 1
+                in_code = False
+            else:
+                new_raw.append(ln)
+                in_code = False
+        else:
+            new_raw.append(ln)
+    if close_fixes:
+        text = "\n".join(new_raw)
+        fixes.append({"type": "broken_code_closing", "count": close_fixes,
+                       "fix": f"fixed {close_fixes} broken code block closing tags"})
+
     # ── 2. 标题前空行标准化 ──
     # H2+ 标题前应有空行
     lines = text.split("\n")
@@ -86,6 +112,26 @@ def format_chapter(filepath: str) -> dict:
         spacing_fixes = abs(len(text) - len(pre))
         fixes.append({"type": "cjk_spacing", "count": spacing_fixes,
                        "fix": f"added {spacing_fixes} CJK-Latin spaces"})
+
+    # ── 6b. 旧式提示转 GitHub Alert ──
+    alert_patterns = [
+        (r">\s*\*\*💡\s*提示\*\*[：:]\s*", "> [!TIP]\n> "),
+        (r">\s*\*\*⚠️\s*注意\*\*[：:]\s*", "> [!WARNING]\n> "),
+        (r">\s*\*\*📌\s*关键\*\*[：:]\s*", "> [!IMPORTANT]\n> "),
+        (r">\s*\*\*❗\s*警告\*\*[：:]\s*", "> [!CAUTION]\n> "),
+        (r">\s*\*\*📝\s*备注\*\*[：:]\s*", "> [!NOTE]\n> "),
+        (r">\s*\*\*提示\*\*[：:]\s*", "> [!TIP]\n> "),
+        (r">\s*\*\*注意\*\*[：:]\s*", "> [!WARNING]\n> "),
+    ]
+    alert_count = 0
+    for pat, repl in alert_patterns:
+        found = re.findall(pat, text)
+        if found:
+            text = re.sub(pat, repl, text)
+            alert_count += len(found)
+    if alert_count:
+        fixes.append({"type": "github_alerts", "count": alert_count,
+                       "fix": f"converted {alert_count} callouts to GitHub Alerts"})
 
     # ── 7. 表格对齐检查 ──
     table_issues = _check_table_alignment(text)
@@ -157,6 +203,20 @@ def _compute_format_score(text: str) -> float:
 
     # 4反引号 (-3 each)
     deductions += len(re.findall(r"````", text)) * 3
+
+    # 代码块关闭标记损坏 (-5 each, 严重)
+    in_cb = False
+    for ln in text.split("\n"):
+        s = ln.strip()
+        if s.startswith("```"):
+            lang = s[3:].strip()
+            if not in_cb:
+                in_cb = True
+            elif lang:
+                deductions += 5  # 关闭标记带语言标签 = 损坏
+                in_cb = False
+            else:
+                in_cb = False
 
     # 未标注语言的代码块 (-2 each)
     deductions += len(re.findall(r"^```\s*$", text, re.MULTILINE)) * 2

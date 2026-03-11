@@ -71,6 +71,125 @@ def _get_chapter_nav_info(project_dir: str) -> dict:
 
 # ── 精炼操作实现 ────────────────────────────────────
 
+# ── P0: 代码块修复 ──
+
+def fix_broken_code_closings(text: str) -> tuple:
+    """修复代码块关闭标记被错误追加语言标签的 BUG。
+
+    例如 ```bash ... ```text 应为 ```bash ... ```
+    """
+    lines = text.split("\n")
+    new_lines = []
+    in_code = False
+    changes = []
+
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped.startswith("```"):
+            lang_part = stripped[3:].strip()
+            if not in_code:
+                in_code = True
+                new_lines.append(line)
+            elif lang_part:
+                # 关闭时不应带语言标签 → 修复为纯关闭
+                new_lines.append("```")
+                changes.append(f"L{i+1}: fixed ```{lang_part} → ```")
+                in_code = False
+            else:
+                new_lines.append(line)
+                in_code = False
+        else:
+            new_lines.append(line)
+
+    if changes:
+        return "\n".join(new_lines), changes
+    return text, None
+
+
+# ── P1: 爬虫残留清洗 ──
+
+def clean_raw_scrape_artifacts(text: str) -> tuple:
+    """移除 AI 优化过程中混入的原始搜索/爬虫结果。"""
+    # 移除 "### 补充 N" 及其后续内容 (直到下一个 H2 或文件末尾)
+    pattern = r"\n### 补充 \d+\n.*?(?=\n## |\Z)"
+    matches = re.findall(pattern, text, re.DOTALL)
+    if matches:
+        text = re.sub(pattern, "", text, flags=re.DOTALL)
+        return text, [f"removed {len(matches)} raw scrape artifact blocks"]
+    return text, None
+
+
+# ── P1: GitHub Alert 语法统一 ──
+
+def convert_to_github_alerts(text: str) -> tuple:
+    """将旧式提示/警告格式转换为 GitHub 原生 Alert 语法。
+
+    > **💡 提示**：... → > [!TIP]\\n> ...
+    > **⚠️ 注意**：... → > [!WARNING]\\n> ...
+    > **📌 关键**：... → > [!IMPORTANT]\\n> ...
+    > **提示**：...    → > [!TIP]\\n> ...
+    """
+    replacements = [
+        (r">\s*\*\*💡\s*提示\*\*[：:]\s*", "> [!TIP]\n> "),
+        (r">\s*\*\*⚠️\s*注意\*\*[：:]\s*", "> [!WARNING]\n> "),
+        (r">\s*\*\*📌\s*关键\*\*[：:]\s*", "> [!IMPORTANT]\n> "),
+        (r">\s*\*\*❗\s*警告\*\*[：:]\s*", "> [!CAUTION]\n> "),
+        (r">\s*\*\*📝\s*备注\*\*[：:]\s*", "> [!NOTE]\n> "),
+        (r">\s*\*\*提示\*\*[：:]\s*", "> [!TIP]\n> "),
+        (r">\s*\*\*注意\*\*[：:]\s*", "> [!WARNING]\n> "),
+    ]
+    changes = []
+    for pat, repl in replacements:
+        if re.search(pat, text):
+            count = len(re.findall(pat, text))
+            text = re.sub(pat, repl, text)
+            changes.append(f"converted {count} alerts: {pat[:30]}")
+    return (text, changes) if changes else (text, None)
+
+
+# ── P2: 章节头部视觉增强 ──
+
+_DIFFICULTY_MAP = {
+    range(0, 40): ("⭐", "入门", "brightgreen"),
+    range(40, 60): ("⭐⭐", "基础", "green"),
+    range(60, 75): ("⭐⭐⭐", "进阶", "orange"),
+    range(75, 90): ("⭐⭐⭐⭐", "高级", "red"),
+    range(90, 101): ("⭐⭐⭐⭐⭐", "专家", "critical"),
+}
+
+
+def _get_difficulty(readability_score: int) -> tuple:
+    for rng, info in _DIFFICULTY_MAP.items():
+        if readability_score in rng:
+            return info
+    return ("⭐⭐⭐", "进阶", "orange")
+
+
+def enhance_chapter_header(text: str, chapter_num: int, chapter_title: str,
+                           word_cnt: int = 0, readability_score: int = 50) -> tuple:
+    """在 H1 标题下方添加 shields.io 徽章和章节概要框。"""
+    # 已有徽章则跳过
+    if "img.shields.io/badge" in text:
+        return text, None
+
+    stars, label, color = _get_difficulty(readability_score)
+    minutes = max(5, word_cnt // 250) if word_cnt else 20
+
+    badge_line = (
+        f"![difficulty](https://img.shields.io/badge/难度-{stars}_{label}-{color})"
+        f" ![time](https://img.shields.io/badge/阅读时间-{minutes}_分钟-blue)"
+        f" ![chapter](https://img.shields.io/badge/章节-{chapter_num:02d}%2F21-purple)"
+    )
+
+    # 在 H1 后一行插入徽章行
+    h1_match = re.search(r"^(#\s+.+)$", text, re.MULTILINE)
+    if h1_match:
+        end = h1_match.end()
+        text = text[:end] + "\n\n" + badge_line + "\n" + text[end:]
+        return text, ["added chapter badges (difficulty, reading time)"]
+    return text, None
+
+
 def _build_header_nav(info: dict) -> str:
     """构建居中的章首导航 HTML 块。"""
     parts = []
@@ -304,29 +423,54 @@ def add_references_section(text: str, chapter_num: int,
 
 
 def add_faq_section(text: str, chapter_title: str) -> tuple:
-    """添加 FAQ 段落（如不存在）。"""
+    """添加 FAQ 段落（如不存在）。根据章节内容生成定制化 FAQ。"""
     if re.search(r"##\s*常见问题|##\s*FAQ", text, re.IGNORECASE):
         return text, None
 
-    faq_block = f"""
+    # 从章节内容中提取 H2 标题，生成有针对性的 FAQ
+    h2s = re.findall(r"^##\s+(.+)$", text, re.MULTILINE)
+    topic_names = [h.strip() for h in h2s[:5] if "目录" not in h and "小结" not in h
+                   and "FAQ" not in h and "参考" not in h]
 
-## 常见问题 (FAQ)
+    # 检测章节中是否有命令行内容
+    has_commands = bool(re.search(r"```(?:bash|shell|sh)", text))
+    has_config = bool(re.search(r"```(?:yaml|json|toml)", text))
 
-### Q: 本章内容是否需要前置知识？
+    q_items = []
 
-**A:** 建议先完成前面的章节，确保理解 OpenClaw 的基础概念和安装方式。
+    # 第一个 FAQ：基于章节主题
+    if topic_names:
+        main_topic = topic_names[0]
+        q_items.append(
+            f"### Q: {main_topic}的核心要点是什么？\n\n"
+            f"**A:** 本章围绕「{chapter_title}」展开，重点涵盖了"
+            f" {', '.join(topic_names[:3])} 等内容。建议结合实际操作逐步理解。"
+        )
 
-### Q: 遇到命令执行错误怎么办？
+    # 第二个 FAQ：基于内容类型
+    if has_commands:
+        q_items.append(
+            "### Q: 执行命令时遇到权限错误怎么办？\n\n"
+            "**A:** 请确认当前用户是否有足够权限。可尝试 `sudo` 或检查文件/目录权限。"
+            "如果使用 Docker 环境，确保容器内用户配置正确。"
+        )
+    elif has_config:
+        q_items.append(
+            "### Q: 配置文件修改后不生效怎么办？\n\n"
+            "**A:** 请检查以下几点：\n"
+            "1. 配置文件路径是否正确\n"
+            "2. YAML/JSON 语法是否有效（注意缩进和引号）\n"
+            "3. 是否需要重启服务才能加载新配置"
+        )
 
-**A:** 请检查 OpenClaw 是否正确安装，运行 `openclaw --version` 确认版本。如问题持续，请参考故障排查章节或提交 GitHub Issue。
+    # 第三个 FAQ：通用但有用
+    q_items.append(
+        "### Q: 本章内容如何与其他章节衔接？\n\n"
+        "**A:** 建议按照教程顺序阅读。本章内容会在后续章节中被引用和扩展。"
+        "遇到困难时可参考 [目录](README.md) 快速定位相关章节。"
+    )
 
-### Q: 如何获取更多帮助？
-
-**A:** 可以通过以下渠道获取帮助：
-- OpenClaw GitHub Issues
-- ClawHub 社区讨论
-- 官方文档 FAQ 页面
-"""
+    faq_block = "\n\n## 常见问题 (FAQ)\n\n" + "\n\n".join(q_items) + "\n"
 
     # 在"本章小结"前插入
     summary_match = re.search(r"\n##\s*本章小结", text)
@@ -342,24 +486,41 @@ def add_faq_section(text: str, chapter_title: str) -> tuple:
 
 
 def add_summary_section(text: str, chapter_title: str) -> tuple:
-    """添加本章小结（如不存在）。"""
+    """添加本章小结（如不存在）。从章节内容提取要点生成有针对性的小结。"""
     if re.search(r"##\s*本章小结|##\s*Summary", text, re.IGNORECASE):
         return text, None
 
-    summary_block = f"""
+    # 提取 H2 标题作为要点
+    h2s = re.findall(r"^##\s+(.+)$", text, re.MULTILINE)
+    key_topics = [h.strip() for h in h2s
+                  if not re.search(r"目录|FAQ|常见问题|参考来源|小结", h)]
 
----
+    # 检测章节中的关键技术术语
+    tech_terms = set()
+    for term in re.findall(r"`([^`]{2,30})`", text):
+        if re.search(r"openclaw|skill|agent|gateway|mcp|hook|cron|memory", term, re.I):
+            tech_terms.add(term)
 
-## 本章小结
+    points = []
+    for topic in key_topics[:4]:
+        points.append(f"- ✅ {topic}")
+    if tech_terms:
+        terms_str = "、".join(f"`{t}`" for t in sorted(tech_terms)[:5])
+        points.append(f"- 🔧 涉及核心概念：{terms_str}")
 
-本章介绍了 {chapter_title} 的核心内容。关键要点：
+    if not points:
+        points = [
+            f"- ✅ 理解了「{chapter_title}」的核心内容",
+            "- ✅ 掌握了关键操作步骤",
+            "- ✅ 了解了最佳实践和注意事项",
+        ]
 
-- ✅ 理解了相关基本概念
-- ✅ 掌握了核心操作步骤
-- ✅ 了解了常见问题及解决方案
-
-> **提示**：建议在实际环境中动手练习本章内容，加深理解。
-"""
+    summary_block = (
+        "\n\n---\n\n## 本章小结\n\n"
+        f"本章系统讲解了 **{chapter_title}** 的核心内容。关键要点：\n\n"
+        + "\n".join(points)
+        + "\n\n> [!TIP]\n> 建议在实际环境中动手练习本章内容，加深理解。\n"
+    )
 
     # 在参考来源前或文件末尾
     refs_match = re.search(r"\n##\s*参考来源", text)
@@ -479,6 +640,16 @@ def refine_chapter(chapter_analysis: ChapterAnalysis, nav_info: dict,
 
     # ── 按优先级执行优化操作 ──
 
+    # 0. [P0] 修复损坏的代码块关闭标记
+    text, changes = fix_broken_code_closings(text)
+    if changes:
+        all_changes.extend(changes)
+
+    # 0b. [P1] 清洗爬虫/搜索残留
+    text, changes = clean_raw_scrape_artifacts(text)
+    if changes:
+        all_changes.extend(changes)
+
     # 1. 修复标题层级
     text, changes = fix_heading_jumps(text)
     if changes:
@@ -486,6 +657,12 @@ def refine_chapter(chapter_analysis: ChapterAnalysis, nav_info: dict,
 
     # 2. 添加章节导航
     text, changes = add_chapter_navigation(text, ch_num, nav_info)
+    if changes:
+        all_changes.extend(changes)
+
+    # 2b. [P2] 章节头部视觉增强（徽章）
+    text, changes = enhance_chapter_header(text, ch_num, ch_title,
+                                           word_count(text))
     if changes:
         all_changes.extend(changes)
 
@@ -520,6 +697,11 @@ def refine_chapter(chapter_analysis: ChapterAnalysis, nav_info: dict,
 
     # 8. 中英文间距
     text, changes = fix_cjk_spacing(text)
+    if changes:
+        all_changes.extend(changes)
+
+    # 8b. [P1] GitHub Alert 语法统一
+    text, changes = convert_to_github_alerts(text)
     if changes:
         all_changes.extend(changes)
 

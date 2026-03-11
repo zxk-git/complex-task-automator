@@ -13,7 +13,11 @@
 
 # 第{N}章 {title}
 
-> **难度**: {difficulty} | **阅读时间**: ~{minutes}分钟 | **前置要求**: {prerequisites}
+![difficulty](https://img.shields.io/badge/难度-{difficulty_badge}-{difficulty_color})
+![time](https://img.shields.io/badge/阅读时间-{minutes}_分钟-blue)
+![chapter](https://img.shields.io/badge/章节-{N:02d}%2F21-purple)
+
+> **前置要求**: {prerequisites}
 
 {brief_intro_paragraph}
 
@@ -155,12 +159,15 @@
 
 ## 本章小结
 
-本章介绍了 {topic_summary}。核心要点：
+本章系统讲解了 **{topic_summary}**。核心要点：
 
 - ✅ {key_point_1}
 - ✅ {key_point_2}
 - ✅ {key_point_3}
 - ✅ {key_point_4}
+
+> [!TIP]
+> 建议在实际环境中动手练习本章内容，加深理解。
 
 **下一步**：在 [第{N+1}章]({next_file}) 中，我们将学习 {next_topic}。
 
@@ -189,7 +196,8 @@
 |--------|------|------|
 | `{N}` | 章节编号 | `03` |
 | `{title}` | 章节标题 | `Skills 插件体系与批量开发` |
-| `{difficulty}` | 难度星级 | `⭐⭐⭐` (1-5星) |
+| `{difficulty_badge}` | 难度徽章文本 | `⭐⭐⭐_进阶` |
+| `{difficulty_color}` | 难度徽章颜色 | `orange` (brightgreen/green/orange/red/critical) |
 | `{minutes}` | 预估阅读时间 | `25` |
 | `{prerequisites}` | 前置要求 | `第2章` |
 | `{prev_file}` | 上一章文件名 | `02-xxx.md` |

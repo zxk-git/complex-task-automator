@@ -70,10 +70,42 @@ openclaw skill install tavily-search
 | `--mode` | string | `auto` | 运行模式 |
 ```
 
-### 引用块使用
-- 💡 提示信息用 `> **💡 提示**：...`
-- ⚠️ 警告信息用 `> **⚠️ 注意**：...`
-- 📌 重要信息用 `> **📌 关键**：...`
+### 引用块使用（GitHub 原生 Alert 语法）
+- 💡 提示 → `> [!TIP]`
+- ⚠️ 警告 → `> [!WARNING]`
+- 📌 重要 → `> [!IMPORTANT]`
+- 📝 备注 → `> [!NOTE]`
+- ❗ 危险 → `> [!CAUTION]`
+
+```markdown
+> [!TIP]
+> 建议使用 `openclaw skill list` 查看已安装的 Skills。
+
+> [!WARNING]
+> 此操作会覆盖现有配置，请先备份。
+
+> [!IMPORTANT]
+> 生产环境必须配置凭证隔离。
+```
+
+### 视觉增强元素
+
+#### shields.io 徽章（章节头部）
+```markdown
+![difficulty](https://img.shields.io/badge/难度-⭐⭐⭐_进阶-orange)
+![time](https://img.shields.io/badge/阅读时间-20_分钟-blue)
+![chapter](https://img.shields.io/badge/章节-03%2F21-purple)
+```
+
+#### 可折叠区域（长内容/参考配置）
+```markdown
+<details>
+<summary>📋 完整配置参考（点击展开）</summary>
+
+配置内容...
+
+</details>
+```
 
 ### 章尾结构
 
@@ -114,12 +146,16 @@ openclaw skill install tavily-search
 ## 格式化操作
 
 ### 自动修复项
-1. 标题层级跳跃 → 自动插入中间层级
-2. 缺失语言标注的代码块 → 推断并添加
-3. 中英文间缺失空格 → 自动添加
-4. 连续密排（>20行无空行）→ 自动插入空行
-5. 章首/章尾缺失导航 → 自动生成
-6. 4 反引号 → 替换为 3 反引号
+1. 损坏的代码块关闭标记（```lang → ```）→ 自动修复
+2. 原始搜索/爬虫残留（"### 补充 N"）→ 自动清除
+3. 标题层级跳跃 → 自动修复
+4. 缺失语言标注的代码块 → 推断并添加
+5. 中英文间缺失空格 → 自动添加
+6. 旧式提示格式 → 转换为 GitHub Alert 语法
+7. 连续密排（>20行无空行）→ 自动插入空行
+8. 章首/章尾缺失导航 → 自动生成（居中 HTML 格式）
+9. 缺失章节徽章 → 自动添加 shields.io 难度/时间徽章
+10. 4 反引号 → 替换为 3 反引号
 
 ### 输出格式
 
