@@ -1,35 +1,77 @@
-# Complex Task Automator - 使用指南
+# 🛠️ Complex Task Automator — 使用指南
+
+<div align="center">
+
+*从零开始上手任务引擎 + 文档/代码自动优化系统*
+
+</div>
+
+---
+
+## 目录
+
+- [快速开始](#快速开始)
+- [交互式 CLI（推荐）](#交互式-cli推荐)
+- [创建工作流](#创建自己的工作流)
+- [任务类型](#任务类型详解)
+- [依赖关系](#依赖关系)
+- [失败处理](#失败处理)
+- [变量使用](#变量使用)
+- [日志与调试](#查看执行日志)
+- [调度任务](#调度任务)
+- [最佳实践](#最佳实践)
+- [常见问题](#常见问题)
+
+---
 
 ## 快速开始
 
 ### 1. 安装依赖
 
 ```bash
-# 安装 Python 依赖
 pip install pyyaml httpx
 
-# 可选：安装调度依赖
+# 可选：调度/监控
 pip install croniter watchdog
 ```
 
 ### 2. 运行示例
 
 ```bash
-# 进入 Skill 目录
 cd ~/.openclaw/workspace/skills/complex-task-automator
 
-# 运行简单示例
-python scripts/task-run.py examples/simple-workflow.yaml
+# 任务引擎
+python3 scripts/task-run.py examples/simple-workflow.yaml
+python3 scripts/task-run.py examples/simple-workflow.yaml --dry-run
 
-# 干运行（仅验证配置）
-python scripts/task-run.py examples/simple-workflow.yaml --dry-run
+# 教程优化
+python3 workflows/openclaw-tutorial-auto/auto_optimizer.py --mode tutorial --dry-run
 
-# 运行并行处理示例
-python scripts/task-run.py examples/parallel-processing.yaml
-
-# 运行重试机制示例
-python scripts/task-run.py examples/retry-demo.yaml
+# 代码质量
+python3 workflows/openclaw-tutorial-auto/auto_optimizer.py --mode code /path/to/project
 ```
+
+---
+
+## 交互式 CLI（推荐）
+
+v5.1 新增的交互式界面，支持 Tab 补全：
+
+```bash
+cd workflows/openclaw-tutorial-auto
+python3 cli.py
+```
+
+```
+openclaw> scan              # 扫描教程
+openclaw> chapters          # 查看评分
+openclaw> code /path        # 代码扫描
+openclaw> plugins           # 查看插件
+openclaw> submit tutorial   # 提交异步任务
+openclaw> help              # 完整帮助
+```
+
+> 详细命令见 [docs/CLI-GUIDE.md](../workflows/openclaw-tutorial-auto/docs/CLI-GUIDE.md)
 
 ---
 
@@ -418,6 +460,12 @@ cat .task-logs/workflows/my-workflow/run-xxx.json | jq '.[] | select(.level == "
 
 ## 更多资源
 
-- [SKILL.md](../SKILL.md) - 完整功能文档
-- [templates/](../templates/) - 配置模板
-- [examples/](../examples/) - 更多示例
+| 文档 | 说明 |
+|------|------|
+| [SKILL.md](../SKILL.md) | 完整功能文档、架构设计、API 参考 |
+| [README.md](../workflows/openclaw-tutorial-auto/README.md) | 优化系统详细文档 |
+| [docs/API.md](../workflows/openclaw-tutorial-auto/docs/API.md) | 模块 API 参考 |
+| [docs/CLI-GUIDE.md](../workflows/openclaw-tutorial-auto/docs/CLI-GUIDE.md) | CLI 交互手册 |
+| [docs/PLUGIN-GUIDE.md](../workflows/openclaw-tutorial-auto/docs/PLUGIN-GUIDE.md) | 插件开发指南 |
+| [templates/](../templates/) | 配置模板 |
+| [examples/](../examples/) | 工作流示例 |

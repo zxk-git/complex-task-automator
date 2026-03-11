@@ -1,6 +1,14 @@
 # 📚 OpenClaw 自动优化系统 v5.1
 
-> 统一自动化优化系统：教程文档 + 代码质量，双模式流水线 + AI 精炼 + 插件 + 交互式 CLI。
+<div align="center">
+
+**统一自动化优化系统** — 教程文档 + 代码质量 · 双模式流水线 + AI 精炼 + 插件 + 交互式 CLI
+
+[![Pipeline](https://img.shields.io/badge/教程-11_阶段-blue.svg)]() [![Code](https://img.shields.io/badge/代码-5_阶段-green.svg)]() [![Plugins](https://img.shields.io/badge/插件-11_hooks-orange.svg)]() [![CLI](https://img.shields.io/badge/CLI-15_命令-purple.svg)]()
+
+</div>
+
+---
 
 ## 架构
 
@@ -424,3 +432,15 @@ code:
   refine:
     auto_fix: { docstrings: true, imports: true, trailing_whitespace: true, main_guard: true }
 ```
+
+---
+
+## 📖 文档导航
+
+| 文档 | 说明 |
+|------|------|
+| [docs/API.md](docs/API.md) | 全模块 API 参考 |
+| [docs/CLI-GUIDE.md](docs/CLI-GUIDE.md) | CLI 交互手册 (15 命令详解) |
+| [docs/PLUGIN-GUIDE.md](docs/PLUGIN-GUIDE.md) | 插件开发指南 (Hooks/示例/最佳实践) |
+| [../../SKILL.md](../../SKILL.md) | 完整功能文档 |
+| [../../assets/TASK_GUIDE.md](../../assets/TASK_GUIDE.md) | 使用指南 |

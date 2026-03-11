@@ -1,8 +1,8 @@
 ```skill
 ---
 name: complex-task-automator
-version: 2.4.0
-description: "高级任务自动化引擎 - 支持信息搜集、大纲管理、文档撰写、Git 远程推送的全链路自动化。24/7 无人值守，OpenClaw Cron 自动调度，批量章节生成，六维度多指标质量检测，持续网络搜索优化，健康检查与飞书推送。统一配置管理、共享工具模块、结构化日志、零重复代码。包含依赖管理、并行执行、失败重试、断点恢复与完整执行追踪。"
+version: 5.1.0
+description: "高级任务自动化引擎 — 双模式流水线 (教程11阶段 + 代码5阶段)、AI 精炼、插件热加载、YAML 评分规则引擎、交互式 CLI、异步任务队列、ECharts Dashboard。支持 8 语言代码分析、六维度质量检测、24/7 自动调度、多渠道通知 (飞书/企微/钉钉/Slack)。"
 author: openclaw
 metadata:
   tags:
@@ -14,6 +14,10 @@ metadata:
     - git-automation
     - research
     - content-writing
+    - code-analysis
+    - quality-scoring
+    - plugin-system
+    - interactive-cli
   triggers:
     - "复杂任务"
     - "自动化工作流"
@@ -35,58 +39,65 @@ metadata:
     - "多维度质量检测"
     - "网络信息搜索"
     - "内容自动优化"
+    - "代码质量分析"
+    - "代码扫描"
+    - "插件系统"
+    - "评分引擎"
+    - "交互式 CLI"
 ---
 
 # Complex Task Automator 🚀
 
-**高级任务自动化引擎** — 从信息搜集到 Git 推送的全链路文档工作流自动化
+**高级任务自动化引擎** — 双模式流水线 + AI 精炼 + 插件热加载 + 交互式 CLI
 
 ## 核心特性
 
 | 特性 | 说明 |
 |------|------|
-| **信息搜集** | 自动从网络/本地资料源搜集信息，提取摘要，标注来源 |
-| **大纲管理** | 生成与优化文档大纲，追踪版本变更历史 |
-| **内容撰写** | 根据大纲生成 Markdown 草稿，保持风格一致，零占位符 |
-| **Git 自动化** | 检测变更、生成 commit 信息、提交并推送到远程仓库 |
-| **24/7 自动调度** | OpenClaw Cron 定时批量生成，健康检查，飞书推送，全自动无人值守 |
-| **持续网络优化** | 自动搜索网络最新信息，智能识别可优化章节，合并新内容，自动提交推送 |
-| **六维度质量检测** | 内容充实度、结构完整性、代码质量、可读性、教学价值、时效性多维评估 |
-| **任务拆解** | 将复杂工作流分解为可执行的子任务 |
-| **依赖管理** | 定义任务间依赖关系，确保正确执行顺序 |
-| **并行执行** | 无依赖的任务并行运行，提高效率 |
-| **失败重试** | 可配置重试机制，支持退避策略 |
-| **状态追踪** | 完整的执行日志和状态管理 |
-| **断点恢复** | 支持从失败点继续执行 |
-| **安全可控** | DRY_RUN 模式、文件保护、Git 白名单，不破坏已确认数据 |
+| **🔧 双模式流水线** | 教程优化 (11 阶段) + 代码质量分析 (5 阶段)，BasePipeline 统一基类 |
+| **🤖 AI 精炼** | OpenClaw Agent 驱动的智能优化（教程/代码/建议三模式） |
+| **🔌 插件热加载** | 11 种 Hook + 文件级插件自动发现 + 运行时重载 |
+| **📊 评分规则引擎** | YAML 可配置维度/规则/等级，20+ 内建检查函数 |
+| **🖥️ 交互式 CLI** | 15 命令 + Tab 补全 + ANSI 彩色输出 |
+| **⚡ 异步任务队列** | 优先级调度 + 多线程 + 持久化 + 超时保护 |
+| **📈 Dashboard** | ECharts 5 实时可视化 (质量分布/趋势/缺陷) |
+| **📢 多渠道通知** | 飞书/企微/钉钉/Slack/Webhook |
+| **🔍 代码分析** | 8 语言深度扫描 + 五维度评分 + 31 种优化建议模板 |
+| **📝 文档自动化** | 信息搜集 → 大纲 → 撰写 → 质检 → Git 推送全链路 |
+| **⚙️ 任务引擎** | 拓扑排序 + 并行执行 + 6 种执行器 + Hooks 系统 |
+| **🛡️ 安全可控** | DRY_RUN 模式、文件保护、Git 白名单 |
 
 ---
 
 ## 目录
 
 1. [快速开始](#快速开始)
-2. [文档自动化工作流](#文档自动化工作流)
-3. [信息搜集与整理](#信息搜集与整理)
-4. [大纲与章节管理](#大纲与章节管理)
-5. [内容撰写与文档生成](#内容撰写与文档生成)
-6. [Git 自动化与远程推送](#git-自动化与远程推送)
-7. [安全与可控性](#安全与可控性)
-8. [24/7 持续优化](#247-持续优化)
-9. [六维度质量检测系统](#六维度质量检测系统)
-10. [持续网络搜索优化](#持续网络搜索优化)
-11. [架构设计](#架构设计)
-12. [任务模型](#任务模型)
-13. [Skill 任务类型](#skill-任务类型)
-14. [任务配置](#任务配置)
-15. [执行引擎](#执行引擎)
-16. [日志系统](#日志系统)
-17. [失败处理](#失败处理)
-18. [调度机制](#调度机制)
-19. [扩展开发](#扩展开发)
-20. [最佳实践](#最佳实践)
-21. [API 参考](#api-参考)
-22. [安装与配置](#安装与配置)
-23. [版本历史](#版本历史)
+2. [交互式 CLI](#交互式-cli)
+3. [文档自动化工作流](#文档自动化工作流)
+4. [信息搜集与整理](#信息搜集与整理)
+5. [大纲与章节管理](#大纲与章节管理)
+6. [内容撰写与文档生成](#内容撰写与文档生成)
+7. [Git 自动化与远程推送](#git-自动化与远程推送)
+8. [安全与可控性](#安全与可控性)
+9. [24/7 持续优化](#247-持续优化)
+10. [六维度质量检测系统](#六维度质量检测系统)
+11. [持续网络搜索优化](#持续网络搜索优化)
+12. [架构设计](#架构设计)
+13. [插件系统](#插件系统)
+14. [评分规则引擎](#评分规则引擎)
+15. [任务队列](#任务队列)
+16. [任务模型](#任务模型)
+17. [Skill 任务类型](#skill-任务类型)
+18. [任务配置](#任务配置)
+19. [执行引擎](#执行引擎)
+20. [日志系统](#日志系统)
+21. [失败处理](#失败处理)
+22. [调度机制](#调度机制)
+23. [扩展开发](#扩展开发)
+24. [最佳实践](#最佳实践)
+25. [API 参考](#api-参考)
+26. [安装与配置](#安装与配置)
+27. [版本历史](#版本历史)
 
 ---
 
@@ -101,43 +112,70 @@ clawdhub install complex-task-automator
 
 **手动安装：**
 ```bash
-git clone https://github.com/openclaw/complex-task-automator.git ~/.openclaw/skills/complex-task-automator
+git clone https://github.com/zxk-git/complex-task-automator.git ~/.openclaw/skills/complex-task-automator
 ```
 
-### 基本使用
+### 交互式 CLI（推荐）
 
-```yaml
-# 定义一个简单的任务流
-name: my-first-workflow
-tasks:
-  - id: fetch-data
-    type: shell
-    config:
-      command: "curl -o data.json https://api.example.com/data"
-    
-  - id: process-data
-    type: python
-    config:
-      script: "scripts/process.py"
-    depends_on: [fetch-data]
-    
-  - id: notify
-    type: webhook
-    config:
-      url: "https://hooks.example.com/notify"
-    depends_on: [process-data]
-```
-
-执行任务流：
 ```bash
-python3 scripts/task-run.py my-first-workflow.yaml
+cd workflows/openclaw-tutorial-auto
+python3 cli.py                    # 进入交互模式
+python3 cli.py scan               # 直接扫描
+python3 cli.py --dry-run          # 干跑模式
 ```
+
+### 流水线模式
+
+```bash
+# 教程优化
+python3 workflows/openclaw-tutorial-auto/auto_optimizer.py --mode tutorial --dry-run
+
+# 代码质量分析
+python3 workflows/openclaw-tutorial-auto/auto_optimizer.py --mode code /path/to/project
+
+# 双模式
+python3 workflows/openclaw-tutorial-auto/auto_optimizer.py --mode both --dry-run
+```
+
+### 任务引擎
+
+```bash
+python3 scripts/task-run.py examples/simple-workflow.yaml
+python3 scripts/task-run.py examples/simple-workflow.yaml --dry-run
+```
+
+---
+
+## 交互式 CLI
+
+v5.1 新增的交互式命令行界面，支持 Tab 补全和 ANSI 彩色输出。
+
+```bash
+python3 cli.py
+```
+
+```
+╔════════════════════════════════════════════════════════╗
+║  🐾  OpenClaw Tutorial Auto — Interactive CLI  v5.0   ║
+╚════════════════════════════════════════════════════════╝
+
+openclaw> scan              # 扫描教程仓库
+openclaw> chapters          # 列出所有章节及评分
+openclaw> code /path        # 代码扫描
+openclaw> plugins           # 查看已加载插件
+openclaw> queue             # 查看任务队列
+openclaw> help              # 完整命令列表
+```
+
+**15 个命令**: scan, analyze, refine, format, code, run, status, chapters, diff, dashboard, queue, submit, plugins, score, help
+
+> 详细说明见 [docs/CLI-GUIDE.md](workflows/openclaw-tutorial-auto/docs/CLI-GUIDE.md)
 
 ---
 
 ## 文档自动化工作流
 
-这是 v2.0.0 的核心功能——将文档生命周期各阶段串联成一条可控的自动化流水线。
+将文档生命周期各阶段串联成一条可控的自动化流水线。
 
 ### 完整工作链
 
@@ -804,27 +842,38 @@ Git 提交 + 推送
 
 ## 架构设计
 
+### 系统全景
+
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    Task Automator Engine                     │
-├─────────────────────────────────────────────────────────────┤
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐         │
-│  │   Parser    │  │  Scheduler  │  │   Logger    │         │
-│  │ (任务解析)   │  │  (任务调度)  │  │ (日志记录)   │         │
-│  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘         │
-│         │                │                │                 │
-│  ┌──────▼────────────────▼────────────────▼──────┐         │
-│  │              Execution Engine                  │         │
-│  │              (执行引擎)                         │         │
-│  └──────┬────────────────┬────────────────┬──────┘         │
-│         │                │                │                 │
-│  ┌──────▼──────┐  ┌──────▼──────┐  ┌──────▼──────┐         │
-│  │   Workers   │  │   Workers   │  │   Workers   │         │
-│  │  (执行节点)  │  │  (执行节点)  │  │  (执行节点)  │         │
-│  └─────────────┘  └─────────────┘  └─────────────┘         │
-├─────────────────────────────────────────────────────────────┤
-│  Storage Layer: Tasks DB | Logs | State | Checkpoints      │
-└─────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────┐
+│                    Complex Task Automator v5.1                      │
+├──────────────────────────┬──────────────────────────────────────────┤
+│    Task Engine Layer     │      Pipeline Layer (v5.1)               │
+│                          │                                          │
+│  ┌──────┐ ┌──────────┐  │  ┌──────────────┐  ┌──────────────────┐ │
+│  │Parser│ │Scheduler │  │  │BasePipeline  │  │PluginManager     │ │
+│  └──┬───┘ └────┬─────┘  │  │  ┌────────┐  │  │ discover/load    │ │
+│     │          │         │  │  │Pipeline│  │  │ trigger(hook)    │ │
+│  ┌──▼──────────▼──────┐ │  │  │ 11阶段 │  │  │ 11 hooks         │ │
+│  │ Execution Engine   │ │  │  ├────────┤  │  └────────┬─────────┘ │
+│  │ 6 executors        │ │  │  │CodePipe│  │           │           │
+│  │ hooks/retry/resume │ │  │  │ 5 阶段 │  │  ┌────────▼─────────┐ │
+│  └────────────────────┘ │  │  └────────┘  │  │ ScoringEngine    │ │
+│                          │  └──────────────┘  │ YAML rules       │ │
+│  ┌────────────────────┐ │                     │ 20+ checks       │ │
+│  │    Logger          │ │  ┌──────────────┐  └──────────────────┘ │
+│  │ JSON+Text dual     │ │  │ TaskQueue    │                       │
+│  └────────────────────┘ │  │ PriorityQ    │  ┌──────────────────┐ │
+│                          │  │ Threading    │  │ Interactive CLI   │ │
+│  ┌────────────────────┐ │  └──────────────┘  │ 15 commands       │ │
+│  │ State / Checkpoint │ │                     │ Tab completion    │ │
+│  └────────────────────┘ │  ┌──────────────┐  └──────────────────┘ │
+│                          │  │ Dashboard    │                       │
+│                          │  │ ECharts 5    │                       │
+│                          │  └──────────────┘                       │
+├──────────────────────────┴──────────────────────────────────────────┤
+│  Storage: config.yaml │ scan-report.json │ .task-queue-state.json  │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
 ### 核心组件
@@ -833,39 +882,150 @@ Git 提交 + 推送
 |------|------|
 | **Parser** | 解析任务配置，构建任务依赖图 |
 | **Scheduler** | 根据依赖关系调度任务执行 |
-| **Execution Engine** | 管理任务执行生命周期 |
-| **Workers** | 实际执行任务的工作节点 |
-| **Logger** | 记录执行日志和状态变更 |
-| **State Manager** | 管理任务状态和检查点 |
+| **Execution Engine** | 管理任务执行生命周期，6 种执行器 |
+| **BasePipeline** | 流水线基类（run/banner/报告/插件集成） |
+| **PluginManager** | 插件热加载（discover/load/trigger/reload） |
+| **ScoringEngine** | YAML 可配置评分规则（20+ 内建检查） |
+| **TaskQueue** | 优先级异步任务队列（多线程 + 持久化） |
+| **InteractiveCLI** | 交互式命令行（15 命令 + Tab 补全） |
+| **Logger** | 结构化日志（JSON+Text 双输出） |
+| **State Manager** | 任务状态和检查点管理 |
 
-### 共享工具模块 (v2.3.0+)
-
-`utils.py` 是所有脚本的公共基础设施，消除了原来分散在 13 个脚本中的重复代码：
+### 模块依赖关系
 
 ```
-┌─────────────────────────────────────────────────────┐
-│                    utils.py                          │
-├──────────────┬──────────────┬───────────────────────┤
-│ 配置管理      │ 文件操作      │ 基础设施              │
-│              │              │                       │
-│ load_config()│ parse_outline│ setup_logger()        │
-│ cfg("a.b")  │ find_chapters│ progress_bar()        │
-│ get_*_dir() │ read_chapter │ banner()              │
-│             │ load/save_json│ run_git()             │
-│             │ word_count() │ check_disk_health()   │
-│             │              │ cleanup_old_caches()  │
-│             │              │ trim_history()        │
-└──────────────┴──────────────┴───────────────────────┘
-         ↑ 被 13 个脚本统一导入
+compat.py ←── types.py
+    ↑
+    ├── tutorial_scanner.py ──→ quality_analyzer.py ──→ tutorial_refiner.py
+    ├── code_scanner.py ──→ code_analyzer.py ──→ code_refiner.py
+    ├── diff_scanner.py
+    ├── notifier.py
+    ├── ai_refiner.py
+    ├── formatter.py / link_checker.py / consistency_checker.py / readability_analyzer.py
+    └── optimization_tracker.py
+         ↑
+    base_pipeline.py ←── plugin_loader.py
+         ↑
+    ├── pipeline.py (Tutorial, 11 stages)
+    └── code_pipeline.py (Code, 5 stages)
+         ↑
+    ├── auto_optimizer.py
+    ├── cli.py
+    ├── task_queue.py
+    └── scoring_engine.py
 ```
 
-**统一配置源** — `config.yaml` 中的所有参数通过 `cfg("section.key")` 点路径访问：
+---
+
+## 插件系统
+
+v5.1 新增的插件热加载系统，支持 11 种 Hook。
+
+### 插件结构
+
 ```python
-from utils import cfg, setup_logger
-logger = setup_logger("my_script")
-min_words = cfg("quality.min_words_per_chapter", 800)
-remote = cfg("git.remote_name", "origin")
+# plugins/my_plugin.py
+PLUGIN_META = {
+    "name": "my_plugin",
+    "version": "1.0.0",
+    "description": "自定义插件",
+    "hooks": ["after_scan", "on_pipeline_end"],
+    "priority": 50,
+}
+
+def after_scan(data, **ctx):
+    # 处理扫描数据并返回
+    return data
 ```
+
+### Hook 触发流程
+
+```
+Pipeline.run()
+  │
+  ├─ trigger("on_pipeline_start")
+  │
+  ├─ stage: scan
+  │     └─ trigger("after_scan", result)
+  │         → Plugin A (priority=10)
+  │         → Plugin B (priority=50) ← pipe 模式传递
+  │
+  ├─ stage: analyze
+  │     ├─ trigger("before_analyze")
+  │     └─ trigger("after_analyze", result)
+  │
+  ├─ ... (其他阶段)
+  │
+  ├─ 错误时 → trigger("on_error")
+  │
+  └─ trigger("on_pipeline_end", report)
+```
+
+> 完整指南见 [docs/PLUGIN-GUIDE.md](workflows/openclaw-tutorial-auto/docs/PLUGIN-GUIDE.md)
+
+---
+
+## 评分规则引擎
+
+YAML 可配置的质量评分系统，替代硬编码评分逻辑。
+
+### 规则配置示例
+
+```yaml
+# scoring-rules/default.yaml
+dimensions:
+  content_depth:
+    weight: 25
+    rules:
+      - check: word_count_min
+        params: { min: 1200 }
+        score: 10
+        penalty: -15
+      - check: has_code_blocks
+        params: { min: 2 }
+        score: 8
+
+grades:
+  S: 95
+  A: 85
+  B: 75
+  C: 60
+  D: 40
+  F: 0
+```
+
+### 使用
+
+```python
+from scoring_engine import ScoringEngine
+
+engine = ScoringEngine()
+engine.load_default()
+result = engine.evaluate(chapter_data)
+print(f"{result.grade}: {result.total:.1f}")  # "A: 88.5"
+```
+
+> API 详情见 [docs/API.md](workflows/openclaw-tutorial-auto/docs/API.md#scoringengine)
+
+---
+
+## 任务队列
+
+多线程异步任务执行，支持优先级调度。
+
+```python
+from task_queue import TaskQueue, Task
+
+tq = TaskQueue(workers=2)
+tq.start()
+tq.submit(Task(task_type="tutorial", params={"stages": ["scan"]}, priority=1))
+tq.submit(Task(task_type="code", params={"project_dir": "/app"}, priority=5))
+tq.wait()
+print(tq.stats())  # {'total': 2, 'by_status': {'done': 2}}
+tq.stop()
+```
+
+**特性**: 优先级 1-10 · 多线程 worker · 超时保护 · JSON 持久化 · 自定义执行器
 
 ---
 
@@ -1731,6 +1891,31 @@ task-graph <workflow.yaml>
 ---
 
 ## 版本历史
+
+### v5.1.0 (2026-03-14)
+- **新增** `plugin_loader.py` — 插件热加载系统 (11 种 Hook, pipe 模式, 优先级排序)
+- **新增** `scoring_engine.py` — YAML 可配置评分规则引擎 (20+ 内建检查, S/A/B/C/D/F 等级)
+- **新增** `task_queue.py` — 优先级多线程任务队列 (PriorityQueue + 持久化 + 超时)
+- **新增** `cli.py` — 交互式 CLI (15 命令, Tab 补全, ANSI 彩色输出)
+- **新增** `plugins/score_highlighter.py` — 示例插件 (after_scan 低分告警)
+- **新增** `scoring-rules/default.yaml` — 6 维度默认评分规则
+- **新增** `docs/API.md` — 全模块 API 参考文档
+- **新增** `docs/CLI-GUIDE.md` — CLI 交互手册
+- **新增** `docs/PLUGIN-GUIDE.md` — 插件开发完整指南
+- **改进** `base_pipeline.py` 集成插件 before/after hooks 到 run() 循环
+
+### v5.0.0 (2026-03-13)
+- **重构** 归档 4 旧 workflow + 8 旧脚本至 `_archive/`
+- **新增** `modules/compat.py` — 统一兼容层 (消除 13 处重复 fallback import)
+- **新增** `modules/types.py` — 17 个 TypedDict 类型定义
+- **新增** `base_pipeline.py` — 流水线基类 (共享 run/banner/报告)
+- **新增** `modules/diff_scanner.py` — 增量 git diff 扫描
+- **新增** `modules/notifier.py` — 多渠道通知 (飞书/企微/钉钉/Slack/Webhook)
+- **新增** `modules/ai_refiner.py` — OpenClaw Agent 驱动 AI 精炼
+- **新增** `dashboard/` — ECharts 5 质量 Dashboard + HTTP API 服务器
+- **改进** 17 处预编译正则, 5 个核心函数类型注解
+- **改进** Pipeline/CodePipeline 继承 BasePipeline, 消除 ~80 行重复代码
+- **改进** 3 处崩溃点添加防御性错误处理
 
 ### v2.4.0 (2026-03-11)
 - **新增** Node.js 任务执行器 (`NodeTaskExecutor`)：支持 `type: node` 直接执行 .js/.mjs 脚本

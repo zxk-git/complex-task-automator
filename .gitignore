@@ -2,6 +2,9 @@ __pycache__/
 *.pyc
 *.pyo
 *.bak
+*.backup
+*.orig
+*~
 .task-logs/
 .task-config/
 checkpoints/
@@ -13,3 +16,4 @@ checkpoints/
 batch-state.json
 research-cache/
 optimize-history.json
+.task-queue-state.json
