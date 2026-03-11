@@ -26,28 +26,11 @@ try:
 except ImportError:
     import logging
     def setup_logger(name):
-        """setup_logger 的功能描述。
-
-            Args:
-                name: ...
-            """
         logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
         return logging.getLogger(name)
     def cfg(key, default=None):
-        """cfg 的功能描述。
-
-            Args:
-                key: ...
-                default: ...
-            """
         return os.environ.get(key.replace(".", "_").upper(), default)
     def save_json(path, data):
-        """save_json 的功能描述。
-
-            Args:
-                path: ...
-                data: ...
-            """
         with open(path, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
 
@@ -61,6 +44,7 @@ LANG_MAP = {
     ".mjs":  "javascript",
     ".jsx":  "javascript",
     ".tsx":  "typescript",
+    ".go":   "go",
     ".sh":   "shell",
     ".bash": "shell",
     ".zsh":  "shell",
@@ -69,6 +53,8 @@ LANG_MAP = {
     ".json": "json",
     ".md":   "markdown",
     ".toml": "toml",
+    ".rs":   "rust",
+    ".rb":   "ruby",
 }
 
 # 默认忽略的目录
@@ -264,10 +250,487 @@ def _node_name(node) -> str:
     return "?"
 
 
-# ── 通用分析 ─────────────────────────────────────────
+# ── JavaScript / TypeScript 深度分析 ─────────────────
+
+def _analyze_javascript(text: str, lang: str) -> dict:
+    """深度分析 JavaScript / TypeScript 文件。"""
+    lines = text.split("\n")
+    result = {
+        "functions": [],
+        "classes": [],
+        "interfaces": [],      # TypeScript
+        "type_aliases": [],     # TypeScript
+        "imports": [],
+        "exports": [],
+        "jsdoc_count": 0,
+        "async_count": 0,
+        "react_components": [],
+        "has_strict_mode": False,
+        "module_type": None,    # "esm" / "cjs" / "mixed"
+        "complexity_estimate": 0,
+    }
+
+    is_ts = lang == "typescript"
+    esm_imports = 0
+    cjs_requires = 0
+
+    for i, line in enumerate(lines, 1):
+        stripped = line.strip()
+
+        # strict mode
+        if stripped in ('"use strict";', "'use strict';"):
+            result["has_strict_mode"] = True
+
+        # ── 函数 ──
+        # function declarations
+        m = re.match(r"^\s*(export\s+)?(default\s+)?(async\s+)?function\s*\*?\s*(\w+)?\s*\(", line)
+        if m:
+            name = m.group(4) or "<anonymous>"
+            result["functions"].append({
+                "name": name, "line": i,
+                "is_async": bool(m.group(3)),
+                "is_exported": bool(m.group(1)),
+                "is_generator": "*" in line[:line.index("(")],
+                "type": "function_declaration",
+            })
+
+        # arrow / const functions
+        m = re.match(r"^\s*(export\s+)?(const|let|var)\s+(\w+)\s*(?::\s*[^=]+)?\s*=\s*(async\s+)?(?:\([^)]*\)|[^=])\s*=>", line)
+        if m:
+            result["functions"].append({
+                "name": m.group(3), "line": i,
+                "is_async": bool(m.group(4)),
+                "is_exported": bool(m.group(1)),
+                "type": "arrow_function",
+            })
+
+        # method pattern (inside class)
+        m = re.match(r"^\s+(async\s+)?(\w+)\s*\([^)]*\)\s*(?::\s*\w[^{]*)?\s*\{", line)
+        if m and not stripped.startswith(("if", "for", "while", "switch", "catch")):
+            # Skip if already matched as function
+            name = m.group(2)
+            if name not in ("if", "for", "while", "switch", "catch", "return", "throw"):
+                result["functions"].append({
+                    "name": name, "line": i,
+                    "is_async": bool(m.group(1)),
+                    "type": "method",
+                })
+
+        # ── 类 ──
+        m = re.match(r"^\s*(export\s+)?(default\s+)?(?:abstract\s+)?class\s+(\w+)(?:\s+extends\s+(\w[\w.]*))?(?:\s+implements\s+(.+))?\s*\{", line)
+        if m:
+            result["classes"].append({
+                "name": m.group(3), "line": i,
+                "extends": m.group(4),
+                "implements": m.group(5).split(",") if m.group(5) else [],
+                "is_exported": bool(m.group(1)),
+            })
+
+        # ── TypeScript: interface / type ──
+        if is_ts:
+            m = re.match(r"^\s*(export\s+)?interface\s+(\w+)(?:<[^>]+>)?\s*(?:extends\s+.+)?\s*\{", line)
+            if m:
+                result["interfaces"].append({
+                    "name": m.group(2), "line": i,
+                    "is_exported": bool(m.group(1)),
+                })
+
+            m = re.match(r"^\s*(export\s+)?type\s+(\w+)(?:<[^>]+>)?\s*=", line)
+            if m:
+                result["type_aliases"].append({
+                    "name": m.group(2), "line": i,
+                    "is_exported": bool(m.group(1)),
+                })
+
+        # ── 导入 ──
+        if stripped.startswith("import "):
+            esm_imports += 1
+            m = re.match(r"import\s+(?:\{([^}]+)\}|(\w+)|(\*\s+as\s+\w+))\s+from\s+['\"]([^'\"]+)['\"]", stripped)
+            if m:
+                result["imports"].append({
+                    "module": m.group(4) or "",
+                    "line": i,
+                    "type": "esm",
+                })
+        elif "require(" in stripped:
+            cjs_requires += 1
+            m = re.match(r"(?:const|let|var)\s+(?:\{[^}]+\}|(\w+))\s*=\s*require\(['\"]([^'\"]+)['\"]\)", stripped)
+            if m:
+                result["imports"].append({
+                    "module": m.group(2) or "", "line": i,
+                    "type": "cjs",
+                })
+
+        # ── 导出 ──
+        if stripped.startswith("export "):
+            m = re.match(r"export\s+(default\s+)?(?:const|let|var|function|class|async\s+function)\s+(\w+)?", stripped)
+            if m:
+                result["exports"].append({
+                    "name": m.group(2) or "default", "line": i,
+                    "is_default": bool(m.group(1)),
+                })
+        if re.match(r"module\.exports\s*=", stripped):
+            result["exports"].append({"name": "module.exports", "line": i, "is_default": True})
+
+        # ── JSDoc ──
+        if stripped.startswith("/**"):
+            result["jsdoc_count"] += 1
+
+        # ── async ──
+        if "async " in line:
+            result["async_count"] += 1
+
+        # ── React ──
+        # Simple heuristic: const Foo = () => ( / return <
+        m = re.match(r"^\s*(?:export\s+)?(?:const|function)\s+([A-Z]\w+)", line)
+        if m:
+            # Likely a React component if name starts with uppercase
+            result["react_components"].append({"name": m.group(1), "line": i})
+
+    # Module type
+    if esm_imports > 0 and cjs_requires == 0:
+        result["module_type"] = "esm"
+    elif cjs_requires > 0 and esm_imports == 0:
+        result["module_type"] = "cjs"
+    elif esm_imports > 0 and cjs_requires > 0:
+        result["module_type"] = "mixed"
+
+    # Complexity estimate (branching)
+    complexity = 0
+    for line in lines:
+        s = line.strip()
+        if re.match(r"(if|else if|else|switch|case)\s*[\(\{:]", s):
+            complexity += 1
+        if re.match(r"(for|while|do)\s*[\(\{]", s):
+            complexity += 1
+        if "? " in s and ":" in s:  # ternary
+            complexity += 1
+        if ".catch(" in s or "catch " in s:
+            complexity += 1
+    result["complexity_estimate"] = complexity
+
+    return result
+
+
+# ── Go 深度分析 ──────────────────────────────────────
+
+def _analyze_go(text: str) -> dict:
+    """深度分析 Go 文件。"""
+    lines = text.split("\n")
+    result = {
+        "package": None,
+        "functions": [],
+        "methods": [],
+        "structs": [],
+        "interfaces": [],
+        "imports": [],
+        "goroutines": 0,
+        "channels": 0,
+        "error_checks": 0,
+        "test_functions": [],
+        "has_init": False,
+        "has_main": False,
+        "complexity_estimate": 0,
+        "doc_comments": 0,
+    }
+
+    in_import_block = False
+    prev_comment = False
+
+    for i, line in enumerate(lines, 1):
+        stripped = line.strip()
+
+        # Package declaration
+        m = re.match(r"^package\s+(\w+)", stripped)
+        if m:
+            result["package"] = m.group(1)
+
+        # Imports
+        if stripped == "import (":
+            in_import_block = True
+            continue
+        if in_import_block:
+            if stripped == ")":
+                in_import_block = False
+                continue
+            m = re.match(r'^\s*(?:(\w+)\s+)?"([^"]+)"', stripped)
+            if m:
+                result["imports"].append({
+                    "alias": m.group(1),
+                    "path": m.group(2),
+                    "line": i,
+                })
+        elif re.match(r'^import\s+"([^"]+)"', stripped):
+            m = re.match(r'^import\s+"([^"]+)"', stripped)
+            result["imports"].append({
+                "alias": None, "path": m.group(1), "line": i,
+            })
+
+        # Functions
+        m = re.match(r"^func\s+(\w+)\s*\(", stripped)
+        if m:
+            name = m.group(1)
+            func_info = {
+                "name": name, "line": i,
+                "has_doc_comment": prev_comment,
+                "is_exported": name[0].isupper(),
+            }
+            result["functions"].append(func_info)
+            if name == "init":
+                result["has_init"] = True
+            elif name == "main":
+                result["has_main"] = True
+            if name.startswith("Test"):
+                result["test_functions"].append({"name": name, "line": i})
+            elif name.startswith("Benchmark"):
+                result["test_functions"].append({"name": name, "line": i, "bench": True})
+
+        # Methods (with receiver)
+        m = re.match(r"^func\s+\((\w+)\s+\*?(\w+)\)\s+(\w+)\s*\(", stripped)
+        if m:
+            result["methods"].append({
+                "receiver": m.group(2),
+                "name": m.group(3),
+                "line": i,
+                "has_doc_comment": prev_comment,
+                "is_exported": m.group(3)[0].isupper(),
+            })
+
+        # Structs
+        m = re.match(r"^type\s+(\w+)\s+struct\s*\{", stripped)
+        if m:
+            result["structs"].append({
+                "name": m.group(1), "line": i,
+                "has_doc_comment": prev_comment,
+                "is_exported": m.group(1)[0].isupper(),
+            })
+
+        # Interfaces
+        m = re.match(r"^type\s+(\w+)\s+interface\s*\{", stripped)
+        if m:
+            result["interfaces"].append({
+                "name": m.group(1), "line": i,
+                "has_doc_comment": prev_comment,
+                "is_exported": m.group(1)[0].isupper(),
+            })
+
+        # Goroutines
+        if re.match(r"^\s*go\s+", stripped):
+            result["goroutines"] += 1
+
+        # Channels
+        if "make(chan " in stripped or "<-" in stripped:
+            result["channels"] += 1
+
+        # Error checks
+        if re.match(r"^\s*if\s+err\s*!=\s*nil", stripped):
+            result["error_checks"] += 1
+
+        # Doc comments (// Comment before exported symbol)
+        if stripped.startswith("//"):
+            prev_comment = True
+            result["doc_comments"] += 1
+        else:
+            prev_comment = False
+
+        # Complexity
+        if re.match(r"^\s*(if|else if|else|switch|case)\s+", stripped):
+            result["complexity_estimate"] += 1
+        if re.match(r"^\s*for\s+", stripped):
+            result["complexity_estimate"] += 1
+        if re.match(r"^\s*select\s*\{", stripped):
+            result["complexity_estimate"] += 1
+
+    return result
+
+
+# ── Shell 深度分析 ───────────────────────────────────
+
+def _analyze_shell(text: str) -> dict:
+    """深度分析 Shell 脚本。"""
+    lines = text.split("\n")
+    result = {
+        "functions": [],
+        "shebang": None,
+        "set_options": [],
+        "variables": [],
+        "sourced_files": [],
+        "uses_pipefail": False,
+        "uses_set_e": False,
+        "uses_set_u": False,
+        "subshells": 0,
+        "pipe_chains": 0,
+        "heredocs": 0,
+        "complexity_estimate": 0,
+        "unquoted_vars": 0,
+        "uses_backticks": False,
+    }
+
+    for i, line in enumerate(lines, 1):
+        stripped = line.strip()
+
+        # Shebang
+        if i == 1 and stripped.startswith("#!"):
+            result["shebang"] = stripped
+
+        # Functions
+        m = re.match(r"^\s*(?:function\s+)?(\w+)\s*\(\)\s*\{?", stripped)
+        if m and stripped not in ("", "{"):
+            name = m.group(1)
+            if name not in ("if", "then", "else", "fi", "for", "while", "do", "done", "case", "esac"):
+                result["functions"].append({"name": name, "line": i})
+
+        # set options
+        m = re.match(r"^\s*set\s+(-\w+)", stripped)
+        if m:
+            opts = m.group(1)
+            result["set_options"].append({"options": opts, "line": i})
+            if "e" in opts:
+                result["uses_set_e"] = True
+            if "u" in opts:
+                result["uses_set_u"] = True
+        if "set -o pipefail" in stripped:
+            result["uses_pipefail"] = True
+
+        # Variables
+        m = re.match(r"^(\w+)=", stripped)
+        if m:
+            result["variables"].append({"name": m.group(1), "line": i})
+
+        # Source
+        if stripped.startswith("source ") or stripped.startswith(". "):
+            m = re.match(r"^(?:source|\.) +(.+)", stripped)
+            if m:
+                result["sourced_files"].append({"file": m.group(1).strip(), "line": i})
+
+        # Subshells
+        if "$(" in line:
+            result["subshells"] += line.count("$(")
+
+        # Pipe chains
+        if " | " in line:
+            result["pipe_chains"] += 1
+
+        # Heredocs
+        if "<<" in stripped and not stripped.startswith("#"):
+            result["heredocs"] += 1
+
+        # Backticks (deprecated)
+        if "`" in line and not stripped.startswith("#"):
+            result["uses_backticks"] = True
+
+        # Unquoted variables ($VAR without quotes)
+        for m in re.finditer(r'(?<!")\$\{?\w+\}?(?!")', line):
+            # Very rough heuristic: if not inside double quotes on the line
+            pos = m.start()
+            if line[:pos].count('"') % 2 == 0 and line[pos:].count('"') % 2 == 0:
+                result["unquoted_vars"] += 1
+
+        # Complexity
+        if re.match(r"^\s*(if|elif|else|case|for|while|until)\s", stripped):
+            result["complexity_estimate"] += 1
+
+    return result
+
+
+# ── Rust 基础分析 ────────────────────────────────────
+
+def _analyze_rust(text: str) -> dict:
+    """基础分析 Rust 文件。"""
+    lines = text.split("\n")
+    result = {
+        "functions": [],
+        "structs": [],
+        "enums": [],
+        "traits": [],
+        "impl_blocks": [],
+        "imports": [],
+        "macros": [],
+        "unsafe_blocks": 0,
+        "doc_comments": 0,
+        "complexity_estimate": 0,
+    }
+
+    prev_doc = False
+
+    for i, line in enumerate(lines, 1):
+        stripped = line.strip()
+
+        # Functions
+        m = re.match(r"^\s*(pub\s+)?(?:async\s+)?fn\s+(\w+)", stripped)
+        if m:
+            result["functions"].append({
+                "name": m.group(2), "line": i,
+                "is_public": bool(m.group(1)),
+                "has_doc_comment": prev_doc,
+            })
+
+        # Structs
+        m = re.match(r"^\s*(pub\s+)?struct\s+(\w+)", stripped)
+        if m:
+            result["structs"].append({
+                "name": m.group(2), "line": i,
+                "is_public": bool(m.group(1)),
+                "has_doc_comment": prev_doc,
+            })
+
+        # Enums
+        m = re.match(r"^\s*(pub\s+)?enum\s+(\w+)", stripped)
+        if m:
+            result["enums"].append({
+                "name": m.group(2), "line": i,
+                "is_public": bool(m.group(1)),
+            })
+
+        # Traits
+        m = re.match(r"^\s*(pub\s+)?trait\s+(\w+)", stripped)
+        if m:
+            result["traits"].append({
+                "name": m.group(2), "line": i,
+                "is_public": bool(m.group(1)),
+            })
+
+        # Impl blocks
+        m = re.match(r"^\s*impl(?:<[^>]+>)?\s+(?:(\w+)\s+for\s+)?(\w+)", stripped)
+        if m:
+            result["impl_blocks"].append({
+                "trait": m.group(1),
+                "target": m.group(2),
+                "line": i,
+            })
+
+        # use statements
+        m = re.match(r"^\s*use\s+(.+);", stripped)
+        if m:
+            result["imports"].append({"path": m.group(1), "line": i})
+
+        # Macros
+        m = re.match(r"^\s*macro_rules!\s+(\w+)", stripped)
+        if m:
+            result["macros"].append({"name": m.group(1), "line": i})
+
+        # Unsafe
+        if "unsafe " in stripped:
+            result["unsafe_blocks"] += 1
+
+        # Doc comments
+        if stripped.startswith("///") or stripped.startswith("//!"):
+            prev_doc = True
+            result["doc_comments"] += 1
+        else:
+            prev_doc = False
+
+        # Complexity
+        if re.match(r"^\s*(if|else if|else|match|for|while|loop)\s", stripped):
+            result["complexity_estimate"] += 1
+
+    return result
+
+
+# ── 通用分析 (fallback) ──────────────────────────────
 
 def _analyze_generic(text: str, lang: str) -> dict:
-    """通用源文件分析（非 Python）。"""
+    """通用源文件分析（所有语言的基础指标）。"""
     lines = text.split("\n")
     result = {
         "functions": [],
@@ -278,28 +741,35 @@ def _analyze_generic(text: str, lang: str) -> dict:
         "long_lines": 0,
     }
 
-    # 函数检测 (正则)
+    # 基础函数检测 (仅在没有专用分析器的语言上提取)
     if lang in ("javascript", "typescript"):
-        # JS/TS functions
+        # 简单 fallback, 前面有深度分析
+        pass
+    elif lang == "shell":
+        pass
+    elif lang == "go":
+        pass
+    elif lang == "rust":
+        pass
+    elif lang == "ruby":
+        for i, line in enumerate(lines, 1):
+            m = re.match(r"^\s*def\s+(\w+[!?]?)", line)
+            if m:
+                result["functions"].append({"name": m.group(1), "line": i})
+    else:
+        # Generic function detection
         for i, line in enumerate(lines, 1):
             if re.match(r"^\s*(export\s+)?(async\s+)?function\s+(\w+)", line):
                 m = re.match(r"^\s*(export\s+)?(async\s+)?function\s+(\w+)", line)
                 result["functions"].append({"name": m.group(3), "line": i})
-            elif re.match(r"^\s*(export\s+)?(const|let|var)\s+(\w+)\s*=\s*(async\s+)?\(", line):
-                m = re.match(r"^\s*(export\s+)?(const|let|var)\s+(\w+)", line)
-                result["functions"].append({"name": m.group(3), "line": i})
-    elif lang == "shell":
-        for i, line in enumerate(lines, 1):
-            m = re.match(r"^\s*(\w+)\s*\(\)\s*\{", line)
-            if m:
-                result["functions"].append({"name": m.group(1), "line": i})
 
     # 通用指标
+    comment_prefixes = ("#", "//", "*", "/*", "///", "//!", ";")
     for line in lines:
         stripped = line.strip()
         if not stripped:
             result["blank_lines"] += 1
-        elif stripped.startswith("#") or stripped.startswith("//") or stripped.startswith("*"):
+        elif any(stripped.startswith(p) for p in comment_prefixes):
             result["comment_lines"] += 1
         if re.search(r"TODO|FIXME|HACK|XXX|TEMP", line, re.IGNORECASE):
             result["todo_count"] += 1
@@ -328,14 +798,31 @@ def compute_code_score(file_info: dict) -> dict:
     lang = file_info.get("language", "")
     loc = file_info.get("line_count", 0)
     py = file_info.get("python_analysis", {})
+    js = file_info.get("js_analysis", {})
+    go = file_info.get("go_analysis", {})
+    sh = file_info.get("shell_analysis", {})
+    rs = file_info.get("rust_analysis", {})
     generic = file_info.get("generic_analysis", {})
+
+    # ── Helper: 获取所有函数列表 ──
+    if lang == "python":
+        all_funcs = py.get("functions", [])
+    elif lang in ("javascript", "typescript"):
+        all_funcs = js.get("functions", [])
+    elif lang == "go":
+        all_funcs = go.get("functions", []) + go.get("methods", [])
+    elif lang == "shell":
+        all_funcs = sh.get("functions", [])
+    elif lang == "rust":
+        all_funcs = rs.get("functions", [])
+    else:
+        all_funcs = generic.get("functions", [])
 
     # ── D1: 模块结构 (20 分) ──
     d1 = 0
-    funcs = py.get("functions", []) or generic.get("functions", [])
-    if 1 <= len(funcs) <= 20:
+    if 1 <= len(all_funcs) <= 20:
         d1 += 5
-    elif len(funcs) > 0:
+    elif len(all_funcs) > 0:
         d1 += 2
     # 模块大小适中
     if 50 <= loc <= 500:
@@ -355,43 +842,115 @@ def compute_code_score(file_info: dict) -> dict:
             d1 += 1
     else:
         d1 += 3
-    # 类数量合理
-    classes = py.get("classes", [])
-    if 0 <= len(classes) <= 5:
+    # 类 / 结构体数量合理
+    type_count = len(py.get("classes", [])) + len(go.get("structs", [])) + \
+                 len(js.get("classes", [])) + len(rs.get("structs", []))
+    if 0 <= type_count <= 5:
         d1 += 5
-    elif len(classes) <= 10:
+    elif type_count <= 10:
         d1 += 3
     else:
         d1 += 1
+    # JS/TS: module type consistency
+    if lang in ("javascript", "typescript"):
+        if js.get("module_type") == "mixed":
+            d1 -= 2
+    # Go: package declaration
+    if lang == "go" and go.get("package"):
+        d1 += 2
     dims["structure"] = min(d1, 20)
 
     # ── D2: 文档完整性 (20 分) ──
     d2 = 0
     if lang == "python":
-        # 模块 docstring
         if py.get("docstring"):
             d2 += 5
-        # 函数 docstring 覆盖率
         pub_funcs = [f for f in py.get("functions", []) if not f.get("is_private")]
         if pub_funcs:
             doc_ratio = sum(1 for f in pub_funcs if f.get("has_docstring")) / len(pub_funcs)
             d2 += round(8 * doc_ratio)
         else:
             d2 += 4
-        # 类 docstring
+        classes = py.get("classes", [])
         if classes:
             cls_doc = sum(1 for c in classes if c.get("has_docstring")) / len(classes)
             d2 += round(4 * cls_doc)
         else:
             d2 += 2
-        # 注释行比例
         comment_ratio = generic.get("comment_lines", 0) / max(loc, 1)
         if 0.05 <= comment_ratio <= 0.3:
             d2 += 3
         elif comment_ratio > 0:
             d2 += 1
+    elif lang in ("javascript", "typescript"):
+        # JSDoc coverage
+        jsdoc = js.get("jsdoc_count", 0)
+        func_count = len(js.get("functions", []))
+        if func_count > 0:
+            jsdoc_ratio = min(jsdoc / func_count, 1.0)
+            d2 += round(10 * jsdoc_ratio)
+        else:
+            d2 += 5
+        # TypeScript types coverage
+        if lang == "typescript":
+            has_types = len(js.get("interfaces", [])) + len(js.get("type_aliases", []))
+            if has_types > 0:
+                d2 += 5
+            else:
+                d2 += 2
+        # Comment density
+        comment_ratio = generic.get("comment_lines", 0) / max(loc, 1)
+        if comment_ratio >= 0.05:
+            d2 += 5
+        elif comment_ratio > 0:
+            d2 += 2
+    elif lang == "go":
+        # Go doc comments for exported symbols
+        exported = [f for f in go.get("functions", []) if f.get("is_exported")]
+        exported += [m for m in go.get("methods", []) if m.get("is_exported")]
+        exported_types = [s for s in go.get("structs", []) if s.get("is_exported")]
+        exported_types += [i for i in go.get("interfaces", []) if i.get("is_exported")]
+        all_exported = exported + exported_types
+        if all_exported:
+            doc_ratio = sum(1 for x in all_exported if x.get("has_doc_comment")) / len(all_exported)
+            d2 += round(12 * doc_ratio)
+        else:
+            d2 += 6
+        comment_ratio = generic.get("comment_lines", 0) / max(loc, 1)
+        if comment_ratio >= 0.1:
+            d2 += 8
+        elif comment_ratio >= 0.05:
+            d2 += 4
+        elif comment_ratio > 0:
+            d2 += 2
+    elif lang == "rust":
+        # Rust doc comments
+        pub_items = [f for f in rs.get("functions", []) if f.get("is_public")]
+        pub_items += [s for s in rs.get("structs", []) if s.get("is_public")]
+        if pub_items:
+            doc_ratio = sum(1 for x in pub_items if x.get("has_doc_comment")) / len(pub_items)
+            d2 += round(12 * doc_ratio)
+        else:
+            d2 += 6
+        doc_count = rs.get("doc_comments", 0)
+        if doc_count >= 5:
+            d2 += 8
+        elif doc_count > 0:
+            d2 += 4
+    elif lang == "shell":
+        # Shell: comments density (functions are often undocumented)
+        comment_ratio = generic.get("comment_lines", 0) / max(loc, 1)
+        if comment_ratio >= 0.15:
+            d2 += 12
+        elif comment_ratio >= 0.08:
+            d2 += 8
+        elif comment_ratio >= 0.03:
+            d2 += 4
+        # Shebang
+        if sh.get("shebang"):
+            d2 += 4
+        d2 += 4  # baseline for shell
     else:
-        # 非 Python: 注释密度
         comment_ratio = generic.get("comment_lines", 0) / max(loc, 1)
         if comment_ratio >= 0.1:
             d2 += 10
@@ -399,16 +958,15 @@ def compute_code_score(file_info: dict) -> dict:
             d2 += 6
         elif comment_ratio > 0:
             d2 += 3
-        # 无 TODO
         if generic.get("todo_count", 0) == 0:
             d2 += 5
         elif generic.get("todo_count", 0) <= 3:
             d2 += 2
-        d2 += 5  # baseline for non-python
+        d2 += 5
     dims["documentation"] = min(d2, 20)
 
     # ── D3: 复杂度 (20 分) ──
-    d3 = 20  # 起始满分，复杂度高扣分
+    d3 = 20
     if lang == "python":
         max_cc = max((f.get("complexity", 0) for f in py.get("functions", [])), default=0)
         avg_cc = (sum(f.get("complexity", 0) for f in py.get("functions", []))
@@ -423,6 +981,35 @@ def compute_code_score(file_info: dict) -> dict:
             d3 -= 5
         elif avg_cc > 5:
             d3 -= 2
+    elif lang in ("javascript", "typescript"):
+        cc = js.get("complexity_estimate", 0)
+        if cc > 30:
+            d3 -= 10
+        elif cc > 15:
+            d3 -= 5
+        elif cc > 8:
+            d3 -= 2
+    elif lang == "go":
+        cc = go.get("complexity_estimate", 0)
+        if cc > 25:
+            d3 -= 10
+        elif cc > 12:
+            d3 -= 5
+        elif cc > 6:
+            d3 -= 2
+    elif lang == "shell":
+        cc = sh.get("complexity_estimate", 0)
+        if cc > 20:
+            d3 -= 10
+        elif cc > 10:
+            d3 -= 5
+    elif lang == "rust":
+        cc = rs.get("complexity_estimate", 0)
+        if cc > 25:
+            d3 -= 10
+        elif cc > 12:
+            d3 -= 5
+
     # 嵌套层级（通用）
     max_indent = 0
     for line in file_info.get("_text", "").split("\n"):
@@ -436,7 +1023,7 @@ def compute_code_score(file_info: dict) -> dict:
     dims["complexity"] = max(0, min(d3, 20))
 
     # ── D4: 代码风格 (20 分) ──
-    d4 = 15  # 基线
+    d4 = 15
     long_lines = generic.get("long_lines", 0)
     if long_lines == 0:
         d4 += 5
@@ -444,7 +1031,7 @@ def compute_code_score(file_info: dict) -> dict:
         d4 += 2
     else:
         d4 -= min(5, long_lines // 5)
-    # Python: 命名规范
+    # Python naming
     if lang == "python":
         bad_names = 0
         for f in py.get("functions", []):
@@ -453,38 +1040,132 @@ def compute_code_score(file_info: dict) -> dict:
         for c in py.get("classes", []):
             if not re.match(r"^[A-Z][a-zA-Z0-9]*$", c["name"]):
                 bad_names += 1
-        if bad_names == 0:
-            pass  # keep baseline
-        else:
+        if bad_names > 0:
             d4 -= min(5, bad_names)
+    # Go naming (exported = PascalCase, unexported = camelCase)
+    elif lang == "go":
+        bad = 0
+        for f in go.get("functions", []):
+            n = f["name"]
+            if n[0].isupper() and "_" in n:
+                bad += 1  # Go exported shouldn't use underscores
+        if bad > 0:
+            d4 -= min(3, bad)
+    # Shell: backticks penalty
+    elif lang == "shell":
+        if sh.get("uses_backticks"):
+            d4 -= 2
     dims["style"] = max(0, min(d4, 20))
 
     # ── D5: 工程实践 (20 分) ──
     d5 = 0
     if lang == "python":
-        # Type hints
         hint_cov = py.get("type_hint_coverage", 0)
         d5 += round(6 * hint_cov)
-        # Main guard
         if py.get("has_main_guard") or not py.get("functions"):
             d5 += 3
-        # No parse errors
         if not py.get("parse_error"):
             d5 += 3
-        # TODO count
         todos = generic.get("todo_count", 0)
         if todos == 0:
             d5 += 4
         elif todos <= 2:
             d5 += 2
-        # No star imports
         star_imports = [i for i in py.get("imports", []) if i.get("module", "").endswith(".*")]
         if not star_imports:
             d5 += 4
         elif len(star_imports) <= 1:
             d5 += 2
+    elif lang in ("javascript", "typescript"):
+        # Strict mode or ESM
+        if js.get("has_strict_mode") or js.get("module_type") == "esm":
+            d5 += 4
+        # TypeScript-specific: type usage
+        if lang == "typescript":
+            types_count = len(js.get("interfaces", [])) + len(js.get("type_aliases", []))
+            if types_count > 0:
+                d5 += 4
+            else:
+                d5 += 1
+        else:
+            d5 += 2
+        # No TODOs
+        todos = generic.get("todo_count", 0)
+        if todos == 0:
+            d5 += 4
+        elif todos <= 2:
+            d5 += 2
+        # Exports defined
+        if js.get("exports"):
+            d5 += 3
+        # Consistent module type
+        if js.get("module_type") in ("esm", "cjs"):
+            d5 += 3
+        elif js.get("module_type") is None:
+            d5 += 2
+    elif lang == "go":
+        # Error handling
+        funcs_count = len(go.get("functions", [])) + len(go.get("methods", []))
+        err_checks = go.get("error_checks", 0)
+        if funcs_count > 0 and err_checks > 0:
+            d5 += 5
+        elif err_checks > 0:
+            d5 += 3
+        # Test functions
+        if go.get("test_functions"):
+            d5 += 5
+        # No TODOs
+        if generic.get("todo_count", 0) == 0:
+            d5 += 4
+        elif generic.get("todo_count", 0) <= 2:
+            d5 += 2
+        # init function
+        if go.get("has_init"):
+            d5 += 3
+        # Package docs
+        if go.get("package"):
+            d5 += 3
+    elif lang == "shell":
+        # set -e
+        if sh.get("uses_set_e"):
+            d5 += 5
+        # set -o pipefail
+        if sh.get("uses_pipefail"):
+            d5 += 3
+        # set -u
+        if sh.get("uses_set_u"):
+            d5 += 3
+        # No backticks
+        if not sh.get("uses_backticks"):
+            d5 += 3
+        # Few unquoted vars
+        uq = sh.get("unquoted_vars", 0)
+        if uq == 0:
+            d5 += 4
+        elif uq <= 3:
+            d5 += 2
+        # Shebang
+        if sh.get("shebang"):
+            d5 += 2
+    elif lang == "rust":
+        # unsafe usage
+        if rs.get("unsafe_blocks", 0) == 0:
+            d5 += 6
+        elif rs.get("unsafe_blocks", 0) <= 1:
+            d5 += 3
+        # doc comments
+        if rs.get("doc_comments", 0) >= 3:
+            d5 += 4
+        # traits / impl
+        if rs.get("traits"):
+            d5 += 3
+        # no TODOs
+        if generic.get("todo_count", 0) == 0:
+            d5 += 4
+        elif generic.get("todo_count", 0) <= 2:
+            d5 += 2
+        d5 += 3
     else:
-        # Non-python baseline
         d5 += 10
         if generic.get("todo_count", 0) == 0:
             d5 += 5
@@ -533,6 +1214,10 @@ def _detect_defects(file_info: dict) -> list:
     """检测代码文件中的缺陷。"""
     defects = []
     py = file_info.get("python_analysis", {})
+    js = file_info.get("js_analysis", {})
+    go = file_info.get("go_analysis", {})
+    sh = file_info.get("shell_analysis", {})
+    rs = file_info.get("rust_analysis", {})
     generic = file_info.get("generic_analysis", {})
     loc = file_info.get("line_count", 0)
     lang = file_info.get("language", "")
@@ -600,6 +1285,97 @@ def _detect_defects(file_info: dict) -> list:
                 "message": "模块缺少 docstring",
             })
 
+    # JavaScript / TypeScript 专项
+    elif lang in ("javascript", "typescript"):
+        # 函数过多
+        if len(js.get("functions", [])) > 30:
+            defects.append({
+                "type": "too_many_functions", "severity": "major",
+                "message": f"函数过多 ({len(js['functions'])} 个)，建议拆分模块",
+            })
+        # 混合模块类型
+        if js.get("module_type") == "mixed":
+            defects.append({
+                "type": "mixed_module_system", "severity": "major",
+                "message": "混合使用 ESM import 和 CJS require",
+            })
+        # 缺少 JSDoc
+        funcs_without_doc = len(js.get("functions", []))
+        jsdoc = js.get("jsdoc_count", 0)
+        if funcs_without_doc > 5 and jsdoc < funcs_without_doc * 0.3:
+            defects.append({
+                "type": "low_jsdoc_coverage", "severity": "minor",
+                "message": f"JSDoc 覆盖率低 ({jsdoc}/{funcs_without_doc})",
+            })
+        # TypeScript: 缺少类型定义
+        if lang == "typescript":
+            types = len(js.get("interfaces", [])) + len(js.get("type_aliases", []))
+            if types == 0 and loc > 50:
+                defects.append({
+                    "type": "no_type_definitions", "severity": "minor",
+                    "message": "TypeScript 文件缺少 interface/type 定义",
+                })
+
+    # Go 专项
+    elif lang == "go":
+        # 导出符号缺少文档注释
+        exported = [f for f in go.get("functions", []) if f.get("is_exported")]
+        undoc = [f for f in exported if not f.get("has_doc_comment")]
+        if undoc:
+            for f in undoc[:3]:
+                defects.append({
+                    "type": "missing_doc_comment", "severity": "minor",
+                    "message": f"导出函数 {f['name']} 缺少文档注释",
+                    "line": f["line"],
+                })
+        # error 未处理 (heuristic)
+        funcs_count = len(go.get("functions", [])) + len(go.get("methods", []))
+        if funcs_count > 3 and go.get("error_checks", 0) == 0:
+            defects.append({
+                "type": "no_error_handling", "severity": "major",
+                "message": "未发现 error 处理 (if err != nil)",
+            })
+
+    # Shell 专项
+    elif lang == "shell":
+        if not sh.get("uses_set_e"):
+            defects.append({
+                "type": "no_set_e", "severity": "major",
+                "message": "缺少 set -e (不会在错误时退出)",
+            })
+        if sh.get("uses_backticks"):
+            defects.append({
+                "type": "uses_backticks", "severity": "minor",
+                "message": "使用了反引号 (建议改用 $(...))",
+            })
+        uq = sh.get("unquoted_vars", 0)
+        if uq > 5:
+            defects.append({
+                "type": "unquoted_variables", "severity": "minor",
+                "message": f"约 {uq} 处未引用的变量 (可能导致分词问题)",
+            })
+        if not sh.get("shebang"):
+            defects.append({
+                "type": "missing_shebang", "severity": "minor",
+                "message": "缺少 shebang 行",
+            })
+
+    # Rust 专项
+    elif lang == "rust":
+        if rs.get("unsafe_blocks", 0) > 3:
+            defects.append({
+                "type": "excessive_unsafe", "severity": "major",
+                "message": f"unsafe 块过多 ({rs['unsafe_blocks']} 个)",
+            })
+        pub_no_doc = [f for f in rs.get("functions", [])
+                      if f.get("is_public") and not f.get("has_doc_comment")]
+        for f in pub_no_doc[:3]:
+            defects.append({
+                "type": "missing_doc_comment", "severity": "minor",
+                "message": f"公共函数 {f['name']} 缺少 /// 文档注释",
+                "line": f["line"],
+            })
+
     # 通用: TODO 过多
     todos = generic.get("todo_count", 0)
     if todos > 5:
@@ -652,8 +1428,20 @@ def scan_file(filepath: str) -> dict:
     # Python 深度分析
     if lang == "python":
         info["python_analysis"] = _analyze_python(filepath, text)
+    # JavaScript / TypeScript 深度分析
+    elif lang in ("javascript", "typescript"):
+        info["js_analysis"] = _analyze_javascript(text, lang)
+    # Go 深度分析
+    elif lang == "go":
+        info["go_analysis"] = _analyze_go(text)
+    # Shell 深度分析
+    elif lang == "shell":
+        info["shell_analysis"] = _analyze_shell(text)
+    # Rust 基础分析
+    elif lang == "rust":
+        info["rust_analysis"] = _analyze_rust(text)
 
-    # 通用分析
+    # 通用分析（所有语言基础指标）
     info["generic_analysis"] = _analyze_generic(text, lang)
 
     # 缺陷检测

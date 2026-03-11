@@ -23,28 +23,11 @@ try:
 except ImportError:
     import logging
     def setup_logger(name):
-        """setup_logger 的功能描述。
-
-            Args:
-                name: ...
-            """
         logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
         return logging.getLogger(name)
     def cfg(key, default=None):
-        """cfg 的功能描述。
-
-            Args:
-                key: ...
-                default: ...
-            """
         return os.environ.get(key.replace(".", "_").upper(), default)
     def save_json(path, data):
-        """save_json 的功能描述。
-
-            Args:
-                path: ...
-                data: ...
-            """
         with open(path, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
 
@@ -52,65 +35,172 @@ log = setup_logger("code_analyzer")
 
 # ── 优化建议模板 ──
 IMPROVEMENT_TEMPLATES = {
+    # ── Python ──
     "add_docstring": {
         "category": "documentation",
         "description": "为 {target} 添加 docstring",
         "estimated_impact": 3,
         "auto_fixable": True,
+        "languages": ["python"],
     },
     "add_module_docstring": {
         "category": "documentation",
         "description": "为模块 {file} 添加 docstring",
         "estimated_impact": 2,
         "auto_fixable": True,
+        "languages": ["python"],
     },
     "add_type_hints": {
         "category": "practices",
         "description": "为 {target} 添加类型注解 (覆盖率 {coverage}%)",
         "estimated_impact": 3,
-        "auto_fixable": False,  # 需要推断类型
-    },
-    "reduce_complexity": {
-        "category": "complexity",
-        "description": "简化 {target} (CC={complexity})",
-        "estimated_impact": 4,
         "auto_fixable": False,
-    },
-    "split_function": {
-        "category": "structure",
-        "description": "拆分 {target} ({lines} 行)",
-        "estimated_impact": 4,
-        "auto_fixable": False,
-    },
-    "split_file": {
-        "category": "structure",
-        "description": "拆分模块 {file} ({loc} 行)",
-        "estimated_impact": 5,
-        "auto_fixable": False,
-    },
-    "fix_naming": {
-        "category": "style",
-        "description": "修正 {target} 的命名约定",
-        "estimated_impact": 1,
-        "auto_fixable": True,
-    },
-    "remove_todos": {
-        "category": "practices",
-        "description": "处理 {file} 中 {count} 个 TODO/FIXME",
-        "estimated_impact": 2,
-        "auto_fixable": False,
-    },
-    "shorten_lines": {
-        "category": "style",
-        "description": "缩短 {file} 中 {count} 行超长行",
-        "estimated_impact": 1,
-        "auto_fixable": True,
+        "languages": ["python"],
     },
     "add_main_guard": {
         "category": "practices",
         "description": "{file} 添加 if __name__ == '__main__' 保护",
         "estimated_impact": 2,
         "auto_fixable": True,
+        "languages": ["python"],
+    },
+    # ── JavaScript / TypeScript ──
+    "add_jsdoc": {
+        "category": "documentation",
+        "description": "为 {target} 添加 JSDoc 注释",
+        "estimated_impact": 3,
+        "auto_fixable": True,
+        "languages": ["javascript", "typescript"],
+    },
+    "add_ts_types": {
+        "category": "practices",
+        "description": "{file} 缺少 TypeScript 类型定义 (interface/type)",
+        "estimated_impact": 3,
+        "auto_fixable": False,
+        "languages": ["typescript"],
+    },
+    "fix_module_consistency": {
+        "category": "style",
+        "description": "{file} 混合使用 ESM import 和 CJS require",
+        "estimated_impact": 3,
+        "auto_fixable": False,
+        "languages": ["javascript", "typescript"],
+    },
+    "add_strict_mode": {
+        "category": "practices",
+        "description": "{file} 添加 'use strict' 声明",
+        "estimated_impact": 1,
+        "auto_fixable": True,
+        "languages": ["javascript"],
+    },
+    # ── Go ──
+    "add_go_doc": {
+        "category": "documentation",
+        "description": "为导出符号 {target} 添加文档注释",
+        "estimated_impact": 3,
+        "auto_fixable": True,
+        "languages": ["go"],
+    },
+    "add_error_handling": {
+        "category": "practices",
+        "description": "{file} 缺少 error 处理 (if err != nil)",
+        "estimated_impact": 4,
+        "auto_fixable": False,
+        "languages": ["go"],
+    },
+    "add_go_tests": {
+        "category": "practices",
+        "description": "{file} 缺少测试函数",
+        "estimated_impact": 3,
+        "auto_fixable": False,
+        "languages": ["go"],
+    },
+    # ── Shell ──
+    "add_set_e": {
+        "category": "practices",
+        "description": "{file} 添加 set -e (错误时退出)",
+        "estimated_impact": 4,
+        "auto_fixable": True,
+        "languages": ["shell"],
+    },
+    "fix_backticks": {
+        "category": "style",
+        "description": "{file} 将反引号替换为 $(…)",
+        "estimated_impact": 2,
+        "auto_fixable": True,
+        "languages": ["shell"],
+    },
+    "add_shebang": {
+        "category": "practices",
+        "description": "{file} 添加 shebang 行",
+        "estimated_impact": 2,
+        "auto_fixable": True,
+        "languages": ["shell"],
+    },
+    "quote_variables": {
+        "category": "style",
+        "description": "{file} 有约 {count} 处未引用的变量",
+        "estimated_impact": 2,
+        "auto_fixable": False,
+        "languages": ["shell"],
+    },
+    # ── Rust ──
+    "add_rust_doc": {
+        "category": "documentation",
+        "description": "为公共项 {target} 添加 /// 文档注释",
+        "estimated_impact": 3,
+        "auto_fixable": True,
+        "languages": ["rust"],
+    },
+    "reduce_unsafe": {
+        "category": "practices",
+        "description": "{file} 有 {count} 个 unsafe 块，建议减少",
+        "estimated_impact": 4,
+        "auto_fixable": False,
+        "languages": ["rust"],
+    },
+    # ── 通用 ──
+    "reduce_complexity": {
+        "category": "complexity",
+        "description": "简化 {target} (CC={complexity})",
+        "estimated_impact": 4,
+        "auto_fixable": False,
+        "languages": ["*"],
+    },
+    "split_function": {
+        "category": "structure",
+        "description": "拆分 {target} ({lines} 行)",
+        "estimated_impact": 4,
+        "auto_fixable": False,
+        "languages": ["*"],
+    },
+    "split_file": {
+        "category": "structure",
+        "description": "拆分模块 {file} ({loc} 行)",
+        "estimated_impact": 5,
+        "auto_fixable": False,
+        "languages": ["*"],
+    },
+    "fix_naming": {
+        "category": "style",
+        "description": "修正 {target} 的命名约定",
+        "estimated_impact": 1,
+        "auto_fixable": True,
+        "languages": ["*"],
+    },
+    "remove_todos": {
+        "category": "practices",
+        "description": "处理 {file} 中 {count} 个 TODO/FIXME",
+        "estimated_impact": 2,
+        "auto_fixable": False,
+        "languages": ["*"],
+    },
+    "shorten_lines": {
+        "category": "style",
+        "description": "缩短 {file} 中 {count} 行超长行",
+        "estimated_impact": 1,
+        "auto_fixable": True,
+        "languages": ["*"],
     },
 }
 
@@ -120,77 +210,154 @@ def analyze_file(file_info: dict) -> list:
     improvements = []
     lang = file_info.get("language", "")
     py = file_info.get("python_analysis", {})
+    js = file_info.get("js_analysis", {})
+    go = file_info.get("go_analysis", {})
+    sh = file_info.get("shell_analysis", {})
+    rs = file_info.get("rust_analysis", {})
     generic = file_info.get("generic_analysis", {})
     fname = file_info.get("relative_path", file_info.get("file", "?"))
 
+    # ── Python 专项 ──
     if lang == "python":
-        # 模块 docstring
         if not py.get("docstring") and file_info.get("line_count", 0) > 20:
-            improvements.append(_make_improvement(
-                "add_module_docstring", file=fname
-            ))
+            improvements.append(_make_improvement("add_module_docstring", file=fname))
 
-        # 函数 docstring
         for f in py.get("functions", []):
             if not f.get("is_private") and not f.get("has_docstring"):
                 improvements.append(_make_improvement(
-                    "add_docstring",
-                    target=f"{fname}::{f['name']}()",
-                    line=f["line"],
+                    "add_docstring", target=f"{fname}::{f['name']}()", line=f["line"],
                 ))
 
-        # 类型注解
         hint_cov = py.get("type_hint_coverage", 0)
         if hint_cov < 0.5 and len(py.get("functions", [])) > 0:
             improvements.append(_make_improvement(
-                "add_type_hints",
-                target=fname,
-                coverage=round(hint_cov * 100),
+                "add_type_hints", target=fname, coverage=round(hint_cov * 100),
             ))
 
-        # 高复杂度
         for f in py.get("functions", []):
             cc = f.get("complexity", 0)
             if cc > 10:
                 improvements.append(_make_improvement(
-                    "reduce_complexity",
-                    target=f"{fname}::{f['name']}()",
-                    complexity=cc,
-                    line=f["line"],
+                    "reduce_complexity", target=f"{fname}::{f['name']}()",
+                    complexity=cc, line=f["line"],
                 ))
 
-        # 过长函数
         for f in py.get("functions", []):
             if f.get("line_count", 0) > 50:
                 improvements.append(_make_improvement(
-                    "split_function",
-                    target=f"{fname}::{f['name']}()",
-                    lines=f["line_count"],
-                    line=f["line"],
+                    "split_function", target=f"{fname}::{f['name']}()",
+                    lines=f["line_count"], line=f["line"],
                 ))
 
-        # 缺少 main guard
         if (py.get("functions") and not py.get("has_main_guard")
                 and file_info.get("line_count", 0) > 30):
+            improvements.append(_make_improvement("add_main_guard", file=fname))
+
+    # ── JavaScript / TypeScript 专项 ──
+    elif lang in ("javascript", "typescript"):
+        # JSDoc 覆盖
+        funcs = js.get("functions", [])
+        jsdoc_count = js.get("jsdoc_count", 0)
+        if funcs and jsdoc_count < len(funcs) * 0.5:
+            for f in funcs[:5]:
+                if f.get("type") != "method":
+                    improvements.append(_make_improvement(
+                        "add_jsdoc", target=f"{fname}::{f['name']}()", line=f["line"],
+                    ))
+
+        # TypeScript 类型
+        if lang == "typescript":
+            types = len(js.get("interfaces", [])) + len(js.get("type_aliases", []))
+            if types == 0 and file_info.get("line_count", 0) > 50:
+                improvements.append(_make_improvement("add_ts_types", file=fname))
+
+        # Module consistency
+        if js.get("module_type") == "mixed":
+            improvements.append(_make_improvement("fix_module_consistency", file=fname))
+
+        # Strict mode (CJS only)
+        if (lang == "javascript" and not js.get("has_strict_mode")
+                and js.get("module_type") == "cjs"):
+            improvements.append(_make_improvement("add_strict_mode", file=fname))
+
+        # Complexity
+        cc = js.get("complexity_estimate", 0)
+        if cc > 15:
             improvements.append(_make_improvement(
-                "add_main_guard", file=fname
+                "reduce_complexity", target=fname, complexity=cc,
             ))
 
-    # 通用
-    # 大文件
+    # ── Go 专项 ──
+    elif lang == "go":
+        # 导出函数文档注释
+        exported = [f for f in go.get("functions", []) if f.get("is_exported")]
+        exported += [m for m in go.get("methods", []) if m.get("is_exported")]
+        for f in exported:
+            if not f.get("has_doc_comment"):
+                improvements.append(_make_improvement(
+                    "add_go_doc", target=f"{fname}::{f['name']}()", line=f["line"],
+                ))
+        # 导出类型文档
+        for s in go.get("structs", []):
+            if s.get("is_exported") and not s.get("has_doc_comment"):
+                improvements.append(_make_improvement(
+                    "add_go_doc", target=f"{fname}::{s['name']}", line=s["line"],
+                ))
+
+        # Error handling
+        funcs_count = len(go.get("functions", [])) + len(go.get("methods", []))
+        if funcs_count > 3 and go.get("error_checks", 0) == 0:
+            improvements.append(_make_improvement("add_error_handling", file=fname))
+
+        # Tests
+        if not go.get("test_functions") and not fname.endswith("_test.go"):
+            improvements.append(_make_improvement("add_go_tests", file=fname))
+
+    # ── Shell 专项 ──
+    elif lang == "shell":
+        if not sh.get("uses_set_e"):
+            improvements.append(_make_improvement("add_set_e", file=fname))
+        if sh.get("uses_backticks"):
+            improvements.append(_make_improvement("fix_backticks", file=fname))
+        if not sh.get("shebang"):
+            improvements.append(_make_improvement("add_shebang", file=fname))
+        uq = sh.get("unquoted_vars", 0)
+        if uq > 3:
+            improvements.append(_make_improvement(
+                "quote_variables", file=fname, count=uq,
+            ))
+
+    # ── Rust 专项 ──
+    elif lang == "rust":
+        # 公共项文档
+        for f in rs.get("functions", []):
+            if f.get("is_public") and not f.get("has_doc_comment"):
+                improvements.append(_make_improvement(
+                    "add_rust_doc", target=f"{fname}::{f['name']}()", line=f["line"],
+                ))
+        for s in rs.get("structs", []):
+            if s.get("is_public") and not s.get("has_doc_comment"):
+                improvements.append(_make_improvement(
+                    "add_rust_doc", target=f"{fname}::{s['name']}", line=s["line"],
+                ))
+        # Unsafe
+        if rs.get("unsafe_blocks", 0) > 2:
+            improvements.append(_make_improvement(
+                "reduce_unsafe", file=fname, count=rs["unsafe_blocks"],
+            ))
+
+    # ── 通用 ──
     if file_info.get("line_count", 0) > 500:
         improvements.append(_make_improvement(
             "split_file", file=fname, loc=file_info["line_count"]
         ))
 
-    # TODO
     todos = generic.get("todo_count", 0)
     if todos > 0:
         improvements.append(_make_improvement(
             "remove_todos", file=fname, count=todos
         ))
 
-    # 超长行
     long = generic.get("long_lines", 0)
     if long > 3:
         improvements.append(_make_improvement(

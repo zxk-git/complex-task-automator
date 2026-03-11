@@ -29,28 +29,11 @@ try:
 except ImportError:
     import logging
     def setup_logger(name):
-        """setup_logger 的功能描述。
-
-            Args:
-                name: ...
-            """
         logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
         return logging.getLogger(name)
     def cfg(key, default=None):
-        """cfg 的功能描述。
-
-            Args:
-                key: ...
-                default: ...
-            """
         return os.environ.get(key.replace(".", "_").upper(), default)
     def save_json(path, data):
-        """save_json 的功能描述。
-
-            Args:
-                path: ...
-                data: ...
-            """
         with open(path, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
 
@@ -304,6 +287,216 @@ def ensure_final_newline(text: str) -> tuple:
     return text, 0
 
 
+# ── JavaScript / TypeScript 自动修复 ─────────────────
+
+def add_jsdoc(filepath: str, text: str) -> tuple:
+    """为缺少 JSDoc 的函数添加 JSDoc 骨架。"""
+    lines = text.split("\n")
+    insertions = []
+    changes = 0
+
+    for i, line in enumerate(lines):
+        # function declaration
+        m = re.match(r"^(\s*)(export\s+)?(default\s+)?(async\s+)?function\s*\*?\s*(\w+)\s*\(([^)]*)\)", line)
+        if m:
+            indent = m.group(1)
+            name = m.group(5)
+            params = m.group(6)
+            # Check if previous line is already a JSDoc
+            if i > 0 and lines[i - 1].strip().endswith("*/"):
+                continue
+            jsdoc = _build_jsdoc(indent, name, params)
+            insertions.append((i, jsdoc))
+            changes += 1
+            continue
+
+        # arrow / const functions
+        m = re.match(r"^(\s*)(export\s+)?(const|let|var)\s+(\w+)\s*=\s*(async\s+)?(?:\(([^)]*)\)|(\w+))\s*=>", line)
+        if m:
+            indent = m.group(1)
+            name = m.group(4)
+            params = m.group(6) or m.group(7) or ""
+            if i > 0 and lines[i - 1].strip().endswith("*/"):
+                continue
+            jsdoc = _build_jsdoc(indent, name, params)
+            insertions.append((i, jsdoc))
+            changes += 1
+
+    # Insert from bottom to top
+    for line_idx, doc in sorted(insertions, reverse=True):
+        lines.insert(line_idx, doc)
+
+    return "\n".join(lines), changes
+
+
+def _build_jsdoc(indent: str, name: str, params_str: str) -> str:
+    """构建 JSDoc 注释。"""
+    parts = [f"{indent}/**", f"{indent} * {name} — TODO: add description."]
+    if params_str.strip():
+        for p in params_str.split(","):
+            p = p.strip()
+            if not p:
+                continue
+            # Handle TS type annotations: name: Type
+            pname = re.split(r"[=:\s]", p)[0].strip()
+            if pname:
+                parts.append(f"{indent} * @param {{{pname}}} {pname} — TODO")
+    parts.append(f"{indent} * @returns TODO")
+    parts.append(f"{indent} */")
+    return "\n".join(parts)
+
+
+def add_strict_mode(text: str) -> tuple:
+    """为 CJS 文件添加 'use strict'。"""
+    if "'use strict'" in text or '"use strict"' in text:
+        return text, 0
+    lines = text.split("\n")
+    insert_at = 0
+    # Skip shebang or initial comments
+    for i, line in enumerate(lines):
+        if line.strip().startswith("#!") or line.strip().startswith("//"):
+            insert_at = i + 1
+        else:
+            break
+    lines.insert(insert_at, "'use strict';")
+    lines.insert(insert_at + 1, "")
+    return "\n".join(lines), 1
+
+
+# ── Go 自动修复 ──────────────────────────────────────
+
+def add_go_doc_comments(text: str) -> tuple:
+    """为缺少文档注释的导出符号添加注释。"""
+    lines = text.split("\n")
+    insertions = []
+    changes = 0
+
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+
+        # Exported function
+        m = re.match(r"^func\s+(\w+)\s*\(", stripped)
+        if m and m.group(1)[0].isupper():
+            if i > 0 and lines[i - 1].strip().startswith("//"):
+                continue
+            name = m.group(1)
+            insertions.append((i, f"// {name} — TODO: add documentation."))
+            changes += 1
+            continue
+
+        # Exported method
+        m = re.match(r"^func\s+\(\w+\s+\*?\w+\)\s+(\w+)\s*\(", stripped)
+        if m and m.group(1)[0].isupper():
+            if i > 0 and lines[i - 1].strip().startswith("//"):
+                continue
+            name = m.group(1)
+            insertions.append((i, f"// {name} — TODO: add documentation."))
+            changes += 1
+            continue
+
+        # Exported type
+        m = re.match(r"^type\s+(\w+)\s+(struct|interface)\s*\{", stripped)
+        if m and m.group(1)[0].isupper():
+            if i > 0 and lines[i - 1].strip().startswith("//"):
+                continue
+            name = m.group(1)
+            insertions.append((i, f"// {name} — TODO: add documentation."))
+            changes += 1
+
+    for line_idx, doc in sorted(insertions, reverse=True):
+        lines.insert(line_idx, doc)
+
+    return "\n".join(lines), changes
+
+
+# ── Shell 自动修复 ───────────────────────────────────
+
+def add_shell_set_e(text: str) -> tuple:
+    """添加 set -euo pipefail。"""
+    if "set -e" in text:
+        return text, 0
+    lines = text.split("\n")
+    insert_at = 0
+    # After shebang
+    if lines and lines[0].startswith("#!"):
+        insert_at = 1
+    # After initial comment block
+    for i in range(insert_at, min(len(lines), 10)):
+        if lines[i].strip().startswith("#") or not lines[i].strip():
+            insert_at = i + 1
+        else:
+            break
+    lines.insert(insert_at, "set -euo pipefail")
+    lines.insert(insert_at + 1, "")
+    return "\n".join(lines), 1
+
+
+def add_shell_shebang(text: str) -> tuple:
+    """添加 shebang 行。"""
+    if text.startswith("#!"):
+        return text, 0
+    return "#!/usr/bin/env bash\n" + text, 1
+
+
+def fix_shell_backticks(text: str) -> tuple:
+    """将反引号替换为 $(…)。"""
+    changes = 0
+    result = []
+    for line in text.split("\n"):
+        if line.strip().startswith("#"):
+            result.append(line)
+            continue
+        # Replace `cmd` with $(cmd) — simple cases only
+        new_line = line
+        while "`" in new_line:
+            m = re.search(r"`([^`]+)`", new_line)
+            if m:
+                cmd = m.group(1)
+                new_line = new_line[:m.start()] + "$(" + cmd + ")" + new_line[m.end():]
+                changes += 1
+            else:
+                break
+        result.append(new_line)
+    return "\n".join(result), min(changes, 1)  # count as 1 change
+
+
+# ── Rust 自动修复 ────────────────────────────────────
+
+def add_rust_doc_comments(text: str) -> tuple:
+    """为缺少文档注释的公共项添加 /// 注释。"""
+    lines = text.split("\n")
+    insertions = []
+    changes = 0
+
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        indent = line[:len(line) - len(line.lstrip())]
+
+        # pub fn
+        m = re.match(r"^\s*pub\s+(?:async\s+)?fn\s+(\w+)", stripped)
+        if m:
+            if i > 0 and lines[i - 1].strip().startswith("///"):
+                continue
+            name = m.group(1)
+            insertions.append((i, f"{indent}/// {name} — TODO: add documentation."))
+            changes += 1
+            continue
+
+        # pub struct / pub enum
+        m = re.match(r"^\s*pub\s+(?:struct|enum)\s+(\w+)", stripped)
+        if m:
+            if i > 0 and lines[i - 1].strip().startswith("///"):
+                continue
+            name = m.group(1)
+            insertions.append((i, f"{indent}/// {name} — TODO: add documentation."))
+            changes += 1
+
+    for line_idx, doc in sorted(insertions, reverse=True):
+        lines.insert(line_idx, doc)
+
+    return "\n".join(lines), changes
+
+
 # ── 主入口 ───────────────────────────────────────────
 
 def refine_file(filepath: str, improvements: list = None) -> dict:
@@ -313,39 +506,81 @@ def refine_file(filepath: str, improvements: list = None) -> dict:
     total_changes = 0
     applied = []
 
-    lang = os.path.splitext(filepath)[1].lower()
-    is_python = lang == ".py"
+    ext = os.path.splitext(filepath)[1].lower()
 
-    # 1. 行尾空白
+    # 1. 行尾空白 (所有语言)
     text, n = fix_trailing_whitespace(text)
     if n:
         total_changes += 1
         applied.append("fix_trailing_whitespace")
 
-    # 2. 末尾换行
+    # 2. 末尾换行 (所有语言)
     text, n = ensure_final_newline(text)
     if n:
         total_changes += 1
         applied.append("ensure_final_newline")
 
-    if is_python:
-        # 3. Docstrings
+    # ── Python ──
+    if ext == ".py":
         text, n = add_docstrings(filepath, text)
         if n:
             total_changes += n
             applied.append(f"add_docstrings ({n})")
 
-        # 4. Import 排序
         text, n = sort_imports(text)
         if n:
             total_changes += 1
             applied.append("sort_imports")
 
-        # 5. Main guard
         text, n = add_main_guard(text)
         if n:
             total_changes += 1
             applied.append("add_main_guard")
+
+    # ── JavaScript / TypeScript ──
+    elif ext in (".js", ".mjs", ".jsx", ".ts", ".tsx"):
+        text, n = add_jsdoc(filepath, text)
+        if n:
+            total_changes += n
+            applied.append(f"add_jsdoc ({n})")
+
+        # Strict mode for CJS files only
+        if ext == ".js":
+            text, n = add_strict_mode(text)
+            if n:
+                total_changes += 1
+                applied.append("add_strict_mode")
+
+    # ── Go ──
+    elif ext == ".go":
+        text, n = add_go_doc_comments(text)
+        if n:
+            total_changes += n
+            applied.append(f"add_go_doc ({n})")
+
+    # ── Shell ──
+    elif ext in (".sh", ".bash", ".zsh"):
+        text, n = add_shell_shebang(text)
+        if n:
+            total_changes += 1
+            applied.append("add_shebang")
+
+        text, n = add_shell_set_e(text)
+        if n:
+            total_changes += 1
+            applied.append("add_set_e")
+
+        text, n = fix_shell_backticks(text)
+        if n:
+            total_changes += 1
+            applied.append("fix_backticks")
+
+    # ── Rust ──
+    elif ext == ".rs":
+        text, n = add_rust_doc_comments(text)
+        if n:
+            total_changes += n
+            applied.append(f"add_rust_doc ({n})")
 
     # 写回
     if text != original:
