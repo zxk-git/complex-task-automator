@@ -1,0 +1,117 @@
+# ==============================
+# 默认教程评分规则
+# ==============================
+# 与 tutorial_scanner 的六维度评分体系对齐
+# 修改此文件即可自定义评分标准，无需改代码
+
+version: "1.0"
+name: "default-tutorial"
+description: "默认教程质量评分规则 (6 维度)"
+
+dimensions:
+  content_depth:
+    weight: 25
+    description: "内容深度 — 字数、代码量、CLI 示例"
+    rules:
+      - check: word_count_min
+        value: 2000
+        penalty: -20
+        message: "字数不足 {value} (实际: {actual})"
+      - check: has_code_blocks
+        min_count: 3
+        penalty: -10
+        message: "代码示例不足 (最少 {min_count}, 实际: {actual})"
+      - check: has_cli_examples
+        penalty: -5
+        message: "缺少 CLI 示例"
+
+  structure:
+    weight: 20
+    description: "文档结构 — 标题层级、目录、导航"
+    rules:
+      - check: heading_hierarchy
+        penalty: -10
+        message: "标题层级跳跃 ({actual} 处)"
+      - check: has_toc
+        penalty: -5
+        message: "缺少目录"
+      - check: has_nav
+        penalty: -5
+        message: "缺少导航链接"
+      - check: min_h2_sections
+        value: 3
+        penalty: -8
+        message: "H2 段落过少 (最少 {value}, 实际: {actual})"
+
+  code_quality:
+    weight: 15
+    description: "代码质量 — 代码块标注、示例完整性"
+    rules:
+      - check: has_code_blocks
+        min_count: 1
+        penalty: -15
+        message: "完全没有代码示例"
+      - check: has_labeled_code
+        min_ratio: 0.5
+        penalty: -8
+        message: "过多未标注语言的代码块 (标注率: {actual})"
+
+  pedagogy:
+    weight: 15
+    description: "教学设计 — FAQ、小结、提示块"
+    rules:
+      - check: has_section
+        section: faq
+        penalty: -5
+        message: "缺少 FAQ 段落"
+      - check: has_section
+        section: summary
+        penalty: -5
+        message: "缺少本章小结"
+      - check: has_blockquotes
+        min_count: 1
+        penalty: -3
+        message: "缺少提示/警告引用块"
+
+  references:
+    weight: 10
+    description: "参考来源 — 引用段落、链接数量"
+    rules:
+      - check: has_section
+        section: references
+        penalty: -10
+        message: "缺少参考来源段落"
+      - check: has_links
+        min_count: 3
+        penalty: -5
+        message: "链接过少 (最少 {min_count}, 实际: {actual})"
+
+  readability:
+    weight: 15
+    description: "可读性 — 缺陷数、严重缺陷、图表"
+    rules:
+      - check: defect_count_max
+        value: 5
+        penalty: -10
+        message: "缺陷过多 (最多 {value}, 实际: {actual})"
+      - check: defect_severity_max
+        severity: critical
+        value: 0
+        penalty: -15
+        message: "存在严重缺陷 ({actual} 个)"
+      - check: has_images
+        min_count: 1
+        bonus: 5
+        message: "包含图片/示意图"
+      - check: has_tables
+        min_count: 1
+        bonus: 3
+        message: "包含表格"
+
+grades:
+  S: 95
+  A: 85
+  B: 75
+  C: 60
+  D: 40
+  F: 0

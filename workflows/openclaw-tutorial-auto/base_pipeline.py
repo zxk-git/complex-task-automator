@@ -17,8 +17,10 @@ from datetime import datetime, timezone
 import os
 import time
 import traceback
+from typing import Any
 
 from modules.compat import setup_logger, save_json
+from plugin_loader import get_plugin_manager
 
 
 class BasePipeline:
@@ -31,14 +33,21 @@ class BasePipeline:
     PIPELINE_VERSION: str = "1.0"
     PIPELINE_ICON: str = "⚙️"
 
-    def __init__(self, *, dry_run: bool = False, stages: list = None, **kwargs):
+    def __init__(self, *, dry_run: bool = False, stages: list = None,
+                 plugins: bool = True, **kwargs):
         self.dry_run = dry_run
         self.stages = stages or list(self.STAGES)
         self.results: dict = {}
         self.start_time: float | None = None
+        self.plugins_enabled = plugins
 
         if dry_run:
             os.environ["DRY_RUN"] = "true"
+
+        # 初始化插件系统
+        self._pm = get_plugin_manager() if plugins else None
+        if self._pm:
+            self._pm.load_all()
 
     # ── 子类需覆写的属性 ──
 
@@ -65,6 +74,7 @@ class BasePipeline:
         os.makedirs(self.output_dir, exist_ok=True)
 
         self._print_banner()
+        self._trigger("on_pipeline_start", {"pipeline": self.PIPELINE_NAME, "stages": self.stages})
 
         for stage in self.stages:
             handler = getattr(self, f"_stage_{stage}", None)
@@ -78,6 +88,8 @@ class BasePipeline:
 
             try:
                 result = handler()
+                # 触发 after_{stage} 钩子，允许插件修改结果
+                result = self._trigger(f"after_{stage}", result)
                 self.results[stage] = {
                     "status": "ok",
                     "data": result,
@@ -87,6 +99,7 @@ class BasePipeline:
             except Exception as e:
                 self._log.error(f"  ❌ {stage} 失败: {e}")
                 traceback.print_exc()
+                self._trigger("on_error", {"stage": stage, "error": str(e)})
                 self.results[stage] = {
                     "status": "error",
                     "error": str(e),
@@ -98,7 +111,9 @@ class BasePipeline:
 
             self._log.info("")
 
-        return self._generate_final_report()
+        report = self._generate_final_report()
+        self._trigger("on_pipeline_end", report)
+        return report
 
     # ── Banner ──
 
@@ -145,6 +160,12 @@ class BasePipeline:
         return report
 
     # ── 便捷属性 ──
+
+    def _trigger(self, hook_name: str, data: Any = None) -> Any:
+        """触发插件钩子（安全包装）。"""
+        if self._pm:
+            return self._pm.trigger(hook_name, data)
+        return data
 
     @property
     def _log(self):
