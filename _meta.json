@@ -1,6 +1,6 @@
 {
   "slug": "complex-task-automator",
-  "version": "2.3.0",
+  "version": "2.4.0",
   "name": "Complex Task Automator",
   "description": "高级任务自动化引擎 - 支持信息搜集、大纲管理、文档撰写、Git 远程推送的全链路自动化。24/7 无人值守，OpenClaw Cron 自动调度，六维度质量检测，持续网络搜索优化，统一配置管理，共享工具模块，结构化日志",
   "author": "openclaw",

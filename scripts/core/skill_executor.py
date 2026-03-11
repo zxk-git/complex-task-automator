@@ -18,6 +18,12 @@ from .logger import TaskLogger
 from .utils import substitute_variables_base
 
 
+def _which(cmd: str) -> bool:
+    """跨平台检查命令是否存在"""
+    import shutil
+    return shutil.which(cmd) is not None
+
+
 @dataclass
 class SkillInfo:
     """Skill 信息"""
@@ -122,10 +128,9 @@ class SkillManager:
         """检查 skill 依赖"""
         missing = []
         
-        # 检查二进制依赖
+        # 检查二进制依赖（跨平台）
         for bin_name in skill.requires_bins:
-            result = subprocess.run(['which', bin_name], capture_output=True)
-            if result.returncode != 0:
+            if not _which(bin_name):
                 missing.append(f"binary: {bin_name}")
         
         # 检查环境变量
@@ -137,7 +142,11 @@ class SkillManager:
 
 
 class SkillTaskExecutor:
-    """Skill 任务执行器"""
+    """Skill 任务执行器
+    
+    NOTE: 不继承 TaskExecutor 以避免循环导入 (engine ↔ skill_executor)。
+    但提供相同的接口签名，且复用 substitute_variables_base。
+    """
     
     def __init__(self, task: Task, context: Any, logger: TaskLogger):
         self.task = task
@@ -146,13 +155,33 @@ class SkillTaskExecutor:
         self.manager = SkillManager()
     
     def substitute_variables(self, value: str) -> str:
-        """替换变量"""
+        """替换变量（统一使用 substitute_variables_base + skill baseDir）"""
         if not isinstance(value, str):
             return value
         
-        # 替换 ${var} 格式的变量（使用共享工具函数）
         result = substitute_variables_base(value, self.context)
         
+        # 替换 {{ result.task_id.field }} 格式的引用
+        import re as _re
+
+        def _replace_result(match):
+            expr = match.group(1).strip()
+            if expr.startswith('result.'):
+                parts = expr.split('.')
+                if len(parts) >= 2:
+                    task_id = parts[1]
+                    if hasattr(self.context, 'get_result'):
+                        task_result = self.context.get_result(task_id)
+                        if task_result:
+                            val = task_result.output
+                            for part in parts[2:]:
+                                if isinstance(val, dict):
+                                    val = val.get(part)
+                            return str(val) if val is not None else ""
+            return match.group(0)
+
+        result = _re.sub(r'\{\{(.+?)\}\}', _replace_result, result)
+
         # 替换 {baseDir} 为 skill 目录
         skill_name = self.task.config.skill_name if hasattr(self.task.config, 'skill_name') else None
         if skill_name:

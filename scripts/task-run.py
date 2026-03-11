@@ -65,6 +65,12 @@ Examples:
         action="store_true",
         help="Enable verbose output"
     )
+    parser.add_argument(
+        "--log-dir",
+        metavar="DIR",
+        default=".task-logs",
+        help="Directory for log output (default: .task-logs)"
+    )
     
     args = parser.parse_args()
     
@@ -89,7 +95,10 @@ Examples:
             args.config,
             variables=variables,
             resume_from=args.resume_from,
-            dry_run=args.dry_run
+            dry_run=args.dry_run,
+            max_parallel=args.parallel,
+            timeout=args.timeout,
+            log_dir=args.log_dir,
         ))
         
         if result:

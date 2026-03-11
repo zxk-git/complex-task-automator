@@ -1,7 +1,7 @@
 ```skill
 ---
 name: complex-task-automator
-version: 2.3.0
+version: 2.4.0
 description: "高级任务自动化引擎 - 支持信息搜集、大纲管理、文档撰写、Git 远程推送的全链路自动化。24/7 无人值守，OpenClaw Cron 自动调度，批量章节生成，六维度多指标质量检测，持续网络搜索优化，健康检查与飞书推送。统一配置管理、共享工具模块、结构化日志、零重复代码。包含依赖管理、并行执行、失败重试、断点恢复与完整执行追踪。"
 author: openclaw
 metadata:
@@ -838,7 +838,7 @@ Git 提交 + 推送
 | **Logger** | 记录执行日志和状态变更 |
 | **State Manager** | 管理任务状态和检查点 |
 
-### 共享工具模块 (v2.3.0)
+### 共享工具模块 (v2.3.0+)
 
 `utils.py` 是所有脚本的公共基础设施，消除了原来分散在 13 个脚本中的重复代码：
 
@@ -1116,15 +1116,15 @@ tasks:
       - quality-check
     on_failure: continue  # 通知失败不影响整体状态
 
-# 钩子定义
+# 钩子定义（v2.4.0 起自动执行，支持 shell/webhook/python 三种类型）
 hooks:
-  pre_run:
+  pre_run:      # 工作流开始前自动执行
     - type: shell
       command: "mkdir -p ${data_dir} ${output_dir}"
-  post_run:
+  post_run:     # 工作流结束后自动执行（无论成功或失败）
     - type: shell
       command: "rm -rf ${data_dir}/temp"
-  on_failure:
+  on_failure:   # 工作流异常时自动执行
     - type: webhook
       url: "https://hooks.example.com/alert"
 ```
@@ -1496,6 +1496,8 @@ class MyCustomTask(BaseTask):
 
 ### 自定义钩子
 
+> **v2.4.0+**: 钩子在工作流执行过程中自动触发，无需显式注册。`pre_run` 在任务开始前执行，`post_run` 在完成后执行，`on_failure` 在工作流异常时执行。支持 shell、webhook、python 三种类型。
+
 ```python
 # scripts/hooks/my_hook.py
 from task_automator import BaseHook
@@ -1623,10 +1625,11 @@ tasks:
 ```bash
 # 执行工作流（已实现）
 task-run <workflow.yaml> [options]
-  --dry-run          # 仅验证，不执行
+  --dry-run          # 仅验证，不执行（增强校验：检测 ID 重复与无效依赖）
   --vars key=value   # 覆盖变量
-  --parallel N       # 设置并行数
-  --timeout N        # 设置超时
+  --parallel N       # 设置并行数（覆盖 workflow config）
+  --timeout N        # 设置超时（覆盖 workflow config）
+  --log-dir DIR      # 日志输出目录（默认 .task-logs）
   --verbose          # 详细输出
 
 # Skill 管理（已实现）
@@ -1728,6 +1731,20 @@ task-graph <workflow.yaml>
 ---
 
 ## 版本历史
+
+### v2.4.0 (2026-03-11)
+- **新增** Node.js 任务执行器 (`NodeTaskExecutor`)：支持 `type: node` 直接执行 .js/.mjs 脚本
+- **新增** `--log-dir DIR` CLI 参数：指定日志输出目录
+- **修复** `parse_workflow()` 完整解析 config block（execution/schedule/notifications/hooks）— 之前全部丢失
+- **修复** `--parallel` / `--timeout` CLI 参数正确传递至执行引擎 — 之前仅解析未使用
+- **修复** Hooks 自动执行：pre_run / post_run / on_failure 钩子自动触发（shell/webhook/python）
+- **修复** `SkillTaskExecutor.substitute_variables()` 支持 `{{ result.task_id.field }}` 引用
+- **修复** `check_requirements()` 跨平台：使用 `shutil.which` 替代 `subprocess + which`
+- **改进** `--dry-run` 增强校验：检测任务 ID 重复与无效依赖引用
+- **改进** `topological_sort()` 算法简化：移除无用的 in_degree 计算
+- **改进** `utils.py` 扩展至 10 个共享函数：safe_read/write_file/json、resolve_path、ensure_dir、load_yaml、which
+- **改进** `TaskLogger` 支持上下文管理器 (`with`) 与 `reset_logger()` 全局重置
+- **改进** 防止 Logger 重复添加 console handler
 
 ### v2.3.0 (2026-03-09)
 - **新增** `utils.py` 共享工具模块：统一 `parse_outline()`(6处)、`find_completed_chapters()`(5处) 等重复函数

@@ -80,6 +80,8 @@ class Scheduler:
         self._lock = asyncio.Lock()
         self._engine = ExecutionEngine()
         self.logger = get_logger()
+        self._running_counts: Dict[str, int] = {}  # 追踪并发运行数
+        self._loop: Optional[asyncio.AbstractEventLoop] = None  # 用于线程安全调度
         
         # 加载已保存的调度任务
         self._load_jobs()
@@ -204,10 +206,23 @@ class Scheduler:
         return None
     
     async def run_job(self, job_id: str) -> bool:
-        """立即运行指定任务"""
+        """立即运行指定任务（带 max_concurrent 检查）"""
         job = self.jobs.get(job_id)
         if not job:
             return False
+
+        # 检查并发数限制
+        max_conc = job.schedule.max_concurrent
+        current = self._running_counts.get(job_id, 0)
+        if current >= max_conc:
+            self.logger.warn(
+                "scheduler", "scheduler", None,
+                f"Job {job_id} skipped: {current}/{max_conc} instances already running"
+            )
+            return False
+
+        # 增加运行计数
+        self._running_counts[job_id] = current + 1
         
         try:
             result = await run_workflow_from_file(
@@ -231,33 +246,47 @@ class Scheduler:
                 f"Failed to run job {job_id}: {e}"
             )
             return False
+        finally:
+            # 减少运行计数
+            self._running_counts[job_id] = max(0, self._running_counts.get(job_id, 1) - 1)
     
     async def _scheduler_loop(self):
-        """调度循环"""
+        """调度循环（智能休眠：根据最近 next_run 动态调整间隔）"""
         while self.running:
             now = datetime.now()
             
             # 检查需要执行的任务
             jobs_to_run = []
+            next_wake: Optional[datetime] = None
+
             async with self._lock:
                 for job in self.jobs.values():
-                    if (job.enabled and 
-                        job.next_run and 
-                        job.next_run <= now):
+                    if not job.enabled or not job.next_run:
+                        continue
+                    if job.next_run <= now:
                         jobs_to_run.append(job.job_id)
+                    else:
+                        # 跟踪最近的下次运行时间
+                        if next_wake is None or job.next_run < next_wake:
+                            next_wake = job.next_run
             
-            # 执行任务
+            # 执行到期任务
             for job_id in jobs_to_run:
-                # 在后台执行，不阻塞调度循环
                 asyncio.create_task(self.run_job(job_id))
             
-            # 等待一段时间再检查
-            await asyncio.sleep(1)
+            # 智能休眠：最少 1 秒，最多 60 秒，或等到最近任务到期
+            if next_wake:
+                sleep_secs = max(1.0, min(60.0, (next_wake - datetime.now()).total_seconds()))
+            else:
+                sleep_secs = 10.0  # 无待执行任务时每 10 秒检查一次
+
+            await asyncio.sleep(sleep_secs)
     
     def start(self):
         """启动调度器"""
         if not self.running:
             self.running = True
+            self._loop = asyncio.get_event_loop()
             asyncio.create_task(self._scheduler_loop())
             print("Scheduler started")
     
@@ -268,11 +297,11 @@ class Scheduler:
 
 
 class EventTrigger:
-    """事件触发器"""
+    """事件触发器（文件监控）"""
     
     def __init__(self, scheduler: Scheduler):
         self.scheduler = scheduler
-        self._watchers: Dict[str, 'FileWatcher'] = {}
+        self._watchers: Dict[str, Any] = {}
     
     def watch_file(
         self,
@@ -281,13 +310,26 @@ class EventTrigger:
         patterns: List[str] = None,
         debounce: int = 60
     ):
-        """监控文件变化触发任务"""
-        from watchdog.observers import Observer
-        from watchdog.events import FileSystemEventHandler, FileCreatedEvent, FileModifiedEvent
+        """监控文件变化触发任务
         
+        需要 watchdog 库。若未安装则抛出 RuntimeError。
+        """
+        try:
+            from watchdog.observers import Observer
+            from watchdog.events import FileSystemEventHandler
+        except ImportError:
+            raise RuntimeError(
+                "watchdog package required for file watching. "
+                "Install via: pip install watchdog"
+            )
+
+        if not Path(path).exists():
+            raise FileNotFoundError(f"Watch path does not exist: {path}")
+        
+        scheduler_ref = self.scheduler
+
         class Handler(FileSystemEventHandler):
-            def __init__(self, trigger, job_id, patterns, debounce):
-                self.trigger = trigger
+            def __init__(self, job_id, patterns, debounce):
                 self.job_id = job_id
                 self.patterns = patterns or ['*']
                 self.debounce = debounce
@@ -301,11 +343,10 @@ class EventTrigger:
                 if not event.is_directory:
                     self._maybe_trigger(event.src_path)
             
-            def _maybe_trigger(self, path):
+            def _maybe_trigger(self, file_path):
                 import fnmatch
                 
-                # 检查模式匹配
-                matched = any(fnmatch.fnmatch(path, p) for p in self.patterns)
+                matched = any(fnmatch.fnmatch(file_path, p) for p in self.patterns)
                 if not matched:
                     return
                 
@@ -313,14 +354,17 @@ class EventTrigger:
                 now = time.time()
                 if now - self.last_trigger < self.debounce:
                     return
-                
                 self.last_trigger = now
                 
-                # 触发任务
-                asyncio.create_task(self.trigger.scheduler.run_job(self.job_id))
+                # 线程安全：从 watchdog 线程提交协程到事件循环
+                loop = scheduler_ref._loop
+                if loop and loop.is_running():
+                    asyncio.run_coroutine_threadsafe(
+                        scheduler_ref.run_job(self.job_id), loop
+                    )
         
         observer = Observer()
-        handler = Handler(self, job_id, patterns, debounce)
+        handler = Handler(job_id, patterns, debounce)
         observer.schedule(handler, path, recursive=True)
         observer.start()
         
@@ -329,8 +373,17 @@ class EventTrigger:
     def unwatch(self, job_id: str):
         """停止监控"""
         if job_id in self._watchers:
-            self._watchers[job_id].stop()
+            try:
+                self._watchers[job_id].stop()
+                self._watchers[job_id].join(timeout=5)
+            except Exception:
+                pass
             del self._watchers[job_id]
+    
+    def unwatch_all(self):
+        """停止所有监控"""
+        for job_id in list(self._watchers.keys()):
+            self.unwatch(job_id)
 
 
 # 全局调度器实例

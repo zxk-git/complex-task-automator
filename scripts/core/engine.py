@@ -15,13 +15,13 @@ import httpx
 from pathlib import Path
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Set, Tuple
-from collections import defaultdict
 import re
 
 from .models import (
     Task, TaskStatus, TaskType, TaskResult, TaskConfig,
     Workflow, WorkflowRun, ExecutionContext, RetryConfig,
-    FailureAction, BackoffStrategy
+    FailureAction, BackoffStrategy,
+    ExecutionConfig, ScheduleConfig, NotificationConfig, WorkflowConfig, Hook
 )
 from .logger import TaskLogger, get_logger
 from .skill_executor import SkillTaskExecutor, SkillManager
@@ -286,6 +286,66 @@ class WebhookTaskExecutor(HttpTaskExecutor):
         return await super().execute()
 
 
+class NodeTaskExecutor(TaskExecutor):
+    """Node.js 脚本任务执行器"""
+
+    async def execute(self) -> TaskResult:
+        config = self.task.config
+        script = self.substitute_variables(config.script)
+        args = [self.substitute_variables(arg) for arg in config.args]
+
+        try:
+            env = os.environ.copy()
+            for key, value in config.env.items():
+                env[key] = self.substitute_variables(value)
+
+            cmd = ["node", script] + args
+
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                env=env,
+            )
+
+            timeout = self.task.timeout
+            try:
+                stdout, stderr = await asyncio.wait_for(
+                    process.communicate(), timeout=timeout
+                )
+            except asyncio.TimeoutError:
+                process.kill()
+                return TaskResult(
+                    status=TaskStatus.TIMEOUT,
+                    error=f"Task timed out after {timeout}s",
+                    retryable=True,
+                )
+
+            if process.returncode == 0:
+                output = stdout.decode("utf-8")
+                try:
+                    output = json.loads(output)
+                except (json.JSONDecodeError, ValueError):
+                    pass
+                return TaskResult(
+                    status=TaskStatus.COMPLETED,
+                    output=output,
+                    metrics={"exit_code": 0},
+                )
+            else:
+                return TaskResult(
+                    status=TaskStatus.FAILED,
+                    output=stdout.decode("utf-8"),
+                    error=stderr.decode("utf-8"),
+                    metrics={"exit_code": process.returncode},
+                    retryable=True,
+                )
+        except Exception as e:
+            return TaskResult(
+                status=TaskStatus.FAILED, error=str(e), retryable=True
+            )
+
+
 class ExecutionEngine:
     """任务执行引擎"""
     
@@ -293,6 +353,7 @@ class ExecutionEngine:
     EXECUTORS = {
         TaskType.SHELL: ShellTaskExecutor,
         TaskType.PYTHON: PythonTaskExecutor,
+        TaskType.NODE: NodeTaskExecutor,
         TaskType.HTTP: HttpTaskExecutor,
         TaskType.WEBHOOK: WebhookTaskExecutor,
         TaskType.SKILL: SkillTaskExecutor,  # 调用本地 Skills
@@ -303,7 +364,57 @@ class ExecutionEngine:
         self._cancelled = False
     
     def parse_workflow(self, config: Dict[str, Any]) -> Workflow:
-        """解析工作流配置"""
+        """解析工作流配置（完整解析 config/hooks/tasks）"""
+        # ---- 解析 execution config ----
+        exec_cfg = config.get('config', {}).get('execution', {})
+        retry_raw = exec_cfg.get('retry_policy', {})
+        execution = ExecutionConfig(
+            max_parallel=exec_cfg.get('max_parallel', 5),
+            timeout=exec_cfg.get('timeout', 3600),
+            retry_policy=RetryConfig(
+                max_attempts=retry_raw.get('max_attempts', 3),
+                backoff=BackoffStrategy(retry_raw.get('backoff', 'exponential')),
+                initial_delay=retry_raw.get('initial_delay', 5),
+                max_delay=retry_raw.get('max_delay', 300),
+            ) if retry_raw else RetryConfig(),
+        )
+
+        # ---- 解析 schedule config ----
+        sched_raw = config.get('config', {}).get('schedule', {})
+        schedule = ScheduleConfig(**{
+            k: v for k, v in sched_raw.items()
+            if k in ScheduleConfig.__dataclass_fields__
+        }) if sched_raw else ScheduleConfig()
+
+        # ---- 解析 notification config ----
+        notif_raw = config.get('config', {}).get('notifications', {})
+        notifications = NotificationConfig(
+            on_start=notif_raw.get('on_start', True),
+            on_complete=notif_raw.get('on_complete', True),
+            on_failure=notif_raw.get('on_failure', True),
+            channels=notif_raw.get('channels', []),
+        ) if notif_raw else NotificationConfig()
+
+        workflow_config = WorkflowConfig(
+            execution=execution,
+            schedule=schedule,
+            notifications=notifications,
+        )
+
+        # ---- 解析 hooks ----
+        hooks: Dict[str, List] = {}
+        for hook_name, hook_list in config.get('hooks', {}).items():
+            parsed = []
+            for h in (hook_list or []):
+                parsed.append(Hook(
+                    type=h.get('type', 'shell'),
+                    command=h.get('command'),
+                    url=h.get('url'),
+                    script=h.get('script'),
+                ))
+            hooks[hook_name] = parsed
+
+        # ---- 解析 tasks ----
         tasks = []
         for task_config in config.get('tasks', []):
             task = Task(
@@ -335,8 +446,10 @@ class ExecutionEngine:
             name=config.get('name', 'unnamed-workflow'),
             version=config.get('version', '1.0'),
             description=config.get('description', ''),
+            config=workflow_config,
             variables=config.get('variables', {}),
-            tasks=tasks
+            tasks=tasks,
+            hooks=hooks,
         )
     
     def build_dependency_graph(self, tasks: List[Task]) -> Dict[str, Set[str]]:
@@ -351,36 +464,60 @@ class ExecutionEngine:
         graph = self.build_dependency_graph(tasks)
         task_map = {task.id: task for task in tasks}
         
-        # 计算入度
-        in_degree = defaultdict(int)
-        for task_id, deps in graph.items():
-            for dep in deps:
-                in_degree[task_id] += 1
-        
-        # BFS 进行分层
-        levels = []
+        # BFS 进行分层（入度为0的节点组成当前层）
         remaining = set(graph.keys())
+        levels = []
         
         while remaining:
-            # 找出当前层级（入度为0的节点）
-            current_level = []
-            for task_id in remaining:
-                has_pending_deps = False
-                for dep in graph[task_id]:
-                    if dep in remaining:
-                        has_pending_deps = True
-                        break
-                if not has_pending_deps:
-                    current_level.append(task_id)
+            current_level = [
+                tid for tid in remaining
+                if not (graph[tid] & remaining)  # 所有依赖均已完成
+            ]
             
             if not current_level:
-                # 检测到循环依赖
                 raise ValueError(f"Circular dependency detected among: {remaining}")
             
             levels.append([task_map[tid] for tid in current_level])
             remaining -= set(current_level)
         
         return levels
+
+    # ------------------------------------------------------------------
+    # Hook 执行
+    # ------------------------------------------------------------------
+    async def _run_hooks(
+        self,
+        hooks: List,
+        context: ExecutionContext,
+        workflow_name: str,
+    ):
+        """执行钩子列表（pre_run / post_run / on_failure）"""
+        for hook in hooks:
+            try:
+                if hook.type == "shell" and hook.command:
+                    proc = await asyncio.create_subprocess_shell(
+                        hook.command,
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.PIPE,
+                    )
+                    await asyncio.wait_for(proc.communicate(), timeout=60)
+                elif hook.type == "webhook" and hook.url:
+                    async with httpx.AsyncClient(timeout=30) as client:
+                        await client.post(hook.url)
+                elif hook.type == "python" and hook.script:
+                    proc = await asyncio.create_subprocess_exec(
+                        sys.executable, hook.script,
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.PIPE,
+                    )
+                    await asyncio.wait_for(proc.communicate(), timeout=120)
+            except Exception as exc:
+                self.logger.warn(
+                    workflow_name,
+                    context.run_id,
+                    None,
+                    f"Hook ({hook.type}) failed: {exc}",
+                )
     
     async def execute_task(
         self,
@@ -521,6 +658,10 @@ class ExecutionEngine:
         self.logger.start_run(workflow.name, context.run_id)
         
         try:
+            # 执行 pre_run 钩子
+            if 'pre_run' in workflow.hooks:
+                await self._run_hooks(workflow.hooks['pre_run'], context, workflow.name)
+
             # 拓扑排序
             levels = self.topological_sort(workflow.tasks)
             
@@ -626,8 +767,21 @@ class ExecutionEngine:
                 None,
                 f"Workflow execution failed: {e}"
             )
+            # 执行 on_failure 钩子
+            if 'on_failure' in workflow.hooks:
+                try:
+                    await self._run_hooks(workflow.hooks['on_failure'], context, workflow.name)
+                except Exception:
+                    pass
         
         finally:
+            # 执行 post_run 钩子
+            if 'post_run' in workflow.hooks:
+                try:
+                    await self._run_hooks(workflow.hooks['post_run'], context, workflow.name)
+                except Exception:
+                    pass
+
             run.end_time = datetime.now()
             context.end_time = run.end_time
             self.logger.end_run(workflow.name, context.run_id, run.status)
@@ -643,7 +797,10 @@ async def run_workflow_from_file(
     config_path: str,
     variables: Dict[str, Any] = None,
     resume_from: str = None,
-    dry_run: bool = False
+    dry_run: bool = False,
+    max_parallel: int = None,
+    timeout: int = None,
+    log_dir: str = ".task-logs",
 ) -> WorkflowRun:
     """从配置文件执行工作流"""
     import yaml
@@ -656,7 +813,7 @@ async def run_workflow_from_file(
             config = yaml.safe_load(f)
     
     # 创建引擎
-    engine = ExecutionEngine()
+    engine = ExecutionEngine(log_dir=log_dir)
     
     # 解析工作流
     workflow = engine.parse_workflow(config)
@@ -664,15 +821,43 @@ async def run_workflow_from_file(
     # 合并变量
     if variables:
         workflow.variables.update(variables)
+
+    # CLI 覆盖参数
+    if max_parallel is not None:
+        workflow.config.execution.max_parallel = max_parallel
+    if timeout is not None:
+        workflow.config.execution.timeout = timeout
     
-    # 干运行模式
+    # 干运行模式 — 增强校验
     if dry_run:
-        print(f"Workflow: {workflow.name}")
+        print(f"Workflow: {workflow.name} (v{workflow.version})")
+        print(f"Description: {workflow.description}")
         print(f"Tasks: {len(workflow.tasks)}")
+        print(f"Max parallel: {workflow.config.execution.max_parallel}")
+        print(f"Timeout: {workflow.config.execution.timeout}s")
+
+        # 检查任务 ID 唯一性
+        ids = [t.id for t in workflow.tasks]
+        dupes = [tid for tid in ids if ids.count(tid) > 1]
+        if dupes:
+            print(f"[WARN] Duplicate task IDs: {set(dupes)}")
+
+        # 检查依赖引用有效性
+        id_set = set(ids)
+        for t in workflow.tasks:
+            for dep in t.depends_on:
+                if dep not in id_set:
+                    print(f"[WARN] Task '{t.id}' depends on unknown task '{dep}'")
+
         levels = engine.topological_sort(workflow.tasks)
         print(f"Execution levels: {len(levels)}")
         for i, level in enumerate(levels):
             print(f"  Level {i+1}: {[t.id for t in level]}")
+
+        if workflow.hooks:
+            print(f"Hooks: {', '.join(workflow.hooks.keys())}")
+
+        print("Dry run OK — no execution performed")
         return None
     
     # 执行

@@ -16,6 +16,7 @@ from .engine import (
     TaskExecutor,
     ShellTaskExecutor,
     PythonTaskExecutor,
+    NodeTaskExecutor,
     HttpTaskExecutor,
     WebhookTaskExecutor,
     run_workflow_from_file
@@ -23,7 +24,8 @@ from .engine import (
 
 from .logger import (
     TaskLogger,
-    get_logger
+    get_logger,
+    reset_logger
 )
 
 from .scheduler import (
@@ -40,6 +42,18 @@ from .skill_executor import (
     list_available_skills
 )
 
+from .utils import (
+    substitute_variables_base,
+    safe_read_file,
+    safe_write_file,
+    safe_read_json,
+    safe_write_json,
+    resolve_path,
+    ensure_dir,
+    load_yaml,
+    which,
+)
+
 __all__ = [
     # Models
     'Task', 'TaskStatus', 'TaskType', 'TaskResult', 'TaskConfig',
@@ -53,6 +67,7 @@ __all__ = [
     'TaskExecutor',
     'ShellTaskExecutor',
     'PythonTaskExecutor',
+    'NodeTaskExecutor',
     'HttpTaskExecutor',
     'WebhookTaskExecutor',
     'run_workflow_from_file',
@@ -60,6 +75,7 @@ __all__ = [
     # Logger
     'TaskLogger',
     'get_logger',
+    'reset_logger',
     
     # Scheduler
     'Scheduler',
@@ -72,6 +88,17 @@ __all__ = [
     'SkillManager',
     'SkillInfo',
     'list_available_skills',
+
+    # Utils
+    'substitute_variables_base',
+    'safe_read_file',
+    'safe_write_file',
+    'safe_read_json',
+    'safe_write_json',
+    'resolve_path',
+    'ensure_dir',
+    'load_yaml',
+    'which',
 ]
 
-__version__ = "2.3.0"
+__version__ = "2.4.0"

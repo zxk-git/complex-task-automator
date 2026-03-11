@@ -16,7 +16,12 @@ from .models import LogEntry, Checkpoint, TaskStatus
 
 
 class TaskLogger:
-    """任务日志记录器"""
+    """任务日志记录器
+    
+    支持上下文管理器:
+        with TaskLogger() as logger:
+            logger.start_run(...)
+    """
     
     def __init__(self, log_dir: str = ".task-logs"):
         self.log_dir = Path(log_dir)
@@ -27,22 +32,30 @@ class TaskLogger:
         (self.log_dir / "tasks").mkdir(exist_ok=True)
         (self.log_dir / "summary").mkdir(exist_ok=True)
         
-        # 配置Python日志
+        # 配置Python日志（防止重复 handler）
         self.logger = logging.getLogger("task_automator")
         self.logger.setLevel(logging.DEBUG)
         
-        # 控制台输出
-        console_handler = logging.StreamHandler()
-        console_handler.setLevel(logging.INFO)
-        console_handler.setFormatter(
-            logging.Formatter('%(asctime)s [%(levelname)s] %(message)s')
-        )
-        self.logger.addHandler(console_handler)
+        if not self.logger.handlers:
+            console_handler = logging.StreamHandler()
+            console_handler.setLevel(logging.INFO)
+            console_handler.setFormatter(
+                logging.Formatter('%(asctime)s [%(levelname)s] %(message)s')
+            )
+            self.logger.addHandler(console_handler)
         
         # 当前运行的日志文件句柄
         self._current_run_id: Optional[str] = None
         self._file_handler: Optional[logging.FileHandler] = None
         self._json_file: Optional[Any] = None
+
+    # 上下文管理器支持
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+        return False
     
     def start_run(self, workflow_name: str, run_id: str):
         """开始新的运行，初始化日志文件"""
@@ -432,8 +445,16 @@ _logger: Optional[TaskLogger] = None
 
 
 def get_logger(log_dir: str = ".task-logs") -> TaskLogger:
-    """获取日志实例"""
+    """获取日志实例（单例）"""
     global _logger
     if _logger is None:
         _logger = TaskLogger(log_dir)
     return _logger
+
+
+def reset_logger():
+    """重置全局日志实例（用于测试或重新初始化）"""
+    global _logger
+    if _logger is not None:
+        _logger.close()
+        _logger = None
