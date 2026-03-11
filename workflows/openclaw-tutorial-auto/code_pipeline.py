@@ -22,51 +22,14 @@ import sys
 import time
 
 _ROOT = os.path.dirname(os.path.abspath(__file__))
-_SCRIPTS = os.path.join(_ROOT, "scripts")
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
-if _SCRIPTS not in sys.path:
-    sys.path.insert(0, _SCRIPTS)
 
 from modules.code_scanner import scan_repository as code_scan
 from modules.code_analyzer import analyze_all as code_analyze
 from modules.code_refiner import refine_all as code_refine
 from modules.suggestion_enricher import enrich_suggestions as code_enrich
-
-try:
-    import importlib
-    _utils_mod = importlib.import_module("utils")
-    setup_logger = _utils_mod.setup_logger
-    cfg = _utils_mod.cfg
-    save_json = _utils_mod.save_json
-except (ImportError, AttributeError):
-    import logging
-    def setup_logger(name):
-        """setup_logger 的功能描述。
-
-            Args:
-                name: ...
-            """
-        logging.basicConfig(level=logging.INFO,
-                            format="%(asctime)s %(levelname)s [%(name)s] %(message)s")
-        return logging.getLogger(name)
-    def cfg(key, default=None):
-        """cfg 的功能描述。
-
-            Args:
-                key: ...
-                default: ...
-            """
-        return os.environ.get(key.replace(".", "_").upper(), default)
-    def save_json(path, data):
-        """save_json 的功能描述。
-
-            Args:
-                path: ...
-                data: ...
-            """
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+from modules.compat import setup_logger, cfg, save_json
 
 log = setup_logger("code_pipeline")
 
@@ -184,7 +147,7 @@ class CodePipeline:
         return report
 
     def _stage_report(self):
-        """生成报告。"""
+        """生成报告并推送通知。"""
         report_text = self._generate_summary_report()
         report_path = os.path.join(self.output_dir, "code-pipeline-report.md")
         with open(report_path, "w", encoding="utf-8") as f:
@@ -197,6 +160,19 @@ class CodePipeline:
         with open(html_path, "w", encoding="utf-8") as f:
             f.write(html_text)
         log.info(f"  HTML 报告: {html_path}")
+
+        # ── 推送通知 ──
+        try:
+            from modules.notifier import notify_pipeline
+            scan = self.results.get("scan", {}).get("data", {})
+            summary = scan.get("summary", {})
+            notify_pipeline("code", {
+                "version": "5.0",
+                "duration": time.time() - self.start_time if self.start_time else 0,
+                "summary": summary,
+            })
+        except Exception as e:
+            log.warning(f"  通知发送失败 (非致命): {e}")
 
         return {"report_path": report_path, "html_report_path": html_path}
 

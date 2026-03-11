@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# 搜索缓存
+.cache/
+
+# 任务日志
+.task-logs/
+
+# 报告输出 (生成在 /tmp)
+/tmp/
+
+# 编辑器
+*.swp
+*.swo
+*~
+.vscode/
+.idea/

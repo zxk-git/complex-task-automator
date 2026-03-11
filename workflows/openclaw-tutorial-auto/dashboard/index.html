@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OpenClaw 优化 Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+  <style>
+    :root {
+      --bg: #0f172a; --card: #1e293b; --text: #e2e8f0; --dim: #94a3b8;
+      --blue: #3b82f6; --green: #22c55e; --yellow: #eab308; --red: #ef4444;
+      --radius: 12px;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+           background: var(--bg); color: var(--text); padding: 24px; }
+    h1 { font-size: 24px; margin-bottom: 8px; }
+    h2 { font-size: 16px; color: var(--dim); margin-bottom: 16px; }
+    .subtitle { color: var(--dim); font-size: 14px; margin-bottom: 24px; }
+
+    .grid { display: grid; gap: 16px; margin-bottom: 24px; }
+    .grid-4 { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+    .grid-2 { grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); }
+    .grid-1 { grid-template-columns: 1fr; }
+
+    .card {
+      background: var(--card); border-radius: var(--radius);
+      padding: 20px; box-shadow: 0 2px 8px rgba(0,0,0,.3);
+    }
+    .stat-card { text-align: center; padding: 24px 16px; }
+    .stat-val { font-size: 36px; font-weight: 700; color: var(--blue); }
+    .stat-label { font-size: 12px; color: var(--dim); margin-top: 6px; text-transform: uppercase; }
+    .stat-sub { font-size: 11px; color: var(--dim); margin-top: 2px; }
+
+    .badge {
+      display: inline-block; padding: 2px 10px; border-radius: 10px;
+      font-size: 11px; font-weight: 600;
+    }
+    .badge-a { background: var(--green); color: #000; }
+    .badge-b { background: #84cc16; color: #000; }
+    .badge-c { background: var(--yellow); color: #000; }
+    .badge-d { background: #f97316; color: #fff; }
+    .badge-f { background: var(--red); color: #fff; }
+
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th { background: #334155; color: var(--dim); padding: 10px 12px;
+         text-align: left; font-size: 11px; text-transform: uppercase; }
+    td { padding: 8px 12px; border-bottom: 1px solid #334155; }
+    tr:hover td { background: #253046; }
+
+    .chart-container { width: 100%; height: 320px; }
+    .chart-sm { height: 240px; }
+    .loading { color: var(--dim); text-align: center; padding: 40px; }
+    .error { color: var(--red); text-align: center; padding: 20px; }
+    .tab-bar { display: flex; gap: 8px; margin-bottom: 16px; }
+    .tab {
+      padding: 8px 16px; border-radius: 8px; cursor: pointer;
+      background: var(--card); color: var(--dim); font-size: 13px;
+      border: 1px solid #334155; transition: all .2s;
+    }
+    .tab.active { background: var(--blue); color: #fff; border-color: var(--blue); }
+    .tab:hover { border-color: var(--blue); }
+    .hidden { display: none; }
+    footer { text-align: center; color: var(--dim); font-size: 11px; margin-top: 32px; padding: 16px; }
+  </style>
+</head>
+<body>
+  <h1>🔧 OpenClaw 优化 Dashboard</h1>
+  <p class="subtitle" id="last-run">加载中...</p>
+
+  <!-- 概览卡片 -->
+  <div class="grid grid-4" id="overview-cards">
+    <div class="card stat-card"><div class="loading">加载中...</div></div>
+  </div>
+
+  <!-- Tab 切换 -->
+  <div class="tab-bar">
+    <div class="tab active" data-tab="tutorial">📚 教程</div>
+    <div class="tab" data-tab="code">🔧 代码</div>
+    <div class="tab" data-tab="trends">📈 趋势</div>
+  </div>
+
+  <!-- 教程面板 -->
+  <div id="panel-tutorial">
+    <div class="grid grid-2">
+      <div class="card">
+        <h2>章节质量分布</h2>
+        <div class="chart-container" id="chart-chapter-scores"></div>
+      </div>
+      <div class="card">
+        <h2>缺陷分布</h2>
+        <div class="chart-container" id="chart-defects"></div>
+      </div>
+    </div>
+    <div class="card" style="margin-bottom:16px">
+      <h2>章节详情</h2>
+      <table id="table-chapters">
+        <thead><tr><th>章节</th><th>文件</th><th>分数</th><th>等级</th><th>字数</th><th>缺陷</th></tr></thead>
+        <tbody><tr><td colspan="6" class="loading">加载中...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 代码面板 -->
+  <div id="panel-code" class="hidden">
+    <div class="grid grid-2">
+      <div class="card">
+        <h2>语言分布</h2>
+        <div class="chart-container chart-sm" id="chart-languages"></div>
+      </div>
+      <div class="card">
+        <h2>文件质量分布</h2>
+        <div class="chart-container chart-sm" id="chart-code-scores"></div>
+      </div>
+    </div>
+    <div class="card" style="margin-bottom:16px">
+      <h2>文件详情</h2>
+      <table id="table-code-files">
+        <thead><tr><th>文件</th><th>语言</th><th>行数</th><th>分数</th><th>等级</th><th>缺陷</th></tr></thead>
+        <tbody><tr><td colspan="6" class="loading">加载中...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 趋势面板 -->
+  <div id="panel-trends" class="hidden">
+    <div class="grid grid-1">
+      <div class="card">
+        <h2>优化趋势</h2>
+        <div class="chart-container" id="chart-trends"></div>
+      </div>
+    </div>
+  </div>
+
+  <footer>OpenClaw Tutorial Auto Pipeline v5.0 · Dashboard</footer>
+
+<script>
+const API = '';  // 同源
+const gradeClass = s => ({A:'badge-a',B:'badge-b',C:'badge-c',D:'badge-d',F:'badge-f'}[s]||'badge-f');
+const grade = s => s >= 90 ? 'A' : s >= 75 ? 'B' : s >= 60 ? 'C' : s >= 40 ? 'D' : 'F';
+
+// ── Tab 切换 ──
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    ['tutorial','code','trends'].forEach(p => {
+      document.getElementById('panel-'+p).classList.toggle('hidden', p !== tab.dataset.tab);
+    });
+  });
+});
+
+// ── API 请求 ──
+async function api(endpoint) {
+  try {
+    const r = await fetch(API + '/api/' + endpoint);
+    return await r.json();
+  } catch(e) {
+    console.error(endpoint, e);
+    return { error: e.message };
+  }
+}
+
+// ── 概览卡片 ──
+async function loadOverview() {
+  const d = await api('overview');
+  if (d.error) return;
+
+  const ts = d.pipeline?.last_run ? new Date(d.pipeline.last_run).toLocaleString('zh-CN') : '—';
+  document.getElementById('last-run').textContent =
+    `上次运行: ${ts} · 耗时 ${d.pipeline?.duration||0}s · v${d.pipeline?.version||'?'}`;
+
+  const tut = d.tutorial?.summary || {};
+  const code = d.code?.summary || {};
+  const trend = d.trends?.overall || {};
+
+  const cards = [
+    { val: tut.completed||'—', label: '教程章节', sub: `${tut.avg_score||0}/100 平均分`, color: '--blue' },
+    { val: code.total_files||'—', label: '代码文件', sub: `${code.avg_score||0}/100 平均分`, color: '--green' },
+    { val: tut.total_defects||0, label: '教程缺陷', sub: `${code.total_defects||0} 代码缺陷`, color: '--yellow' },
+    { val: `${(trend.avg_improvement||0) >= 0 ? '+' : ''}${(trend.avg_improvement||0).toFixed(1)}`, label: '平均提升/次', sub: trend.trend_direction||'—', color: '--blue' },
+  ];
+
+  document.getElementById('overview-cards').innerHTML = cards.map(c =>
+    `<div class="card stat-card">
+      <div class="stat-val" style="color:var(${c.color})">${c.val}</div>
+      <div class="stat-label">${c.label}</div>
+      <div class="stat-sub">${c.sub}</div>
+    </div>`
+  ).join('');
+}
+
+// ── 教程面板 ──
+async function loadTutorial() {
+  const scan = await api('scan');
+  if (scan.error || !scan.chapters) return;
+
+  const chapters = scan.chapters.sort((a,b) => a.number - b.number);
+
+  // 章节分数图
+  const chartEl = document.getElementById('chart-chapter-scores');
+  if (chartEl) {
+    const chart = echarts.init(chartEl);
+    chart.setOption({
+      tooltip: { trigger: 'axis' },
+      xAxis: { type: 'category', data: chapters.map(c => `第${c.number}章`),
+               axisLabel: { color: '#94a3b8', fontSize: 10, rotate: 45 } },
+      yAxis: { type: 'value', min: 0, max: 100,
+               axisLabel: { color: '#94a3b8' },
+               splitLine: { lineStyle: { color: '#334155' } } },
+      series: [{
+        data: chapters.map(c => ({
+          value: c.quality_score || 0,
+          itemStyle: { color: c.quality_score >= 90 ? '#22c55e' :
+                              c.quality_score >= 75 ? '#84cc16' :
+                              c.quality_score >= 60 ? '#eab308' :
+                              c.quality_score >= 40 ? '#f97316' : '#ef4444' }
+        })),
+        type: 'bar', barWidth: '60%',
+      }],
+      grid: { left: 40, right: 16, top: 16, bottom: 60 },
+    });
+    window.addEventListener('resize', () => chart.resize());
+  }
+
+  // 缺陷分布图
+  const defectEl = document.getElementById('chart-defects');
+  if (defectEl) {
+    const defectTypes = {};
+    chapters.forEach(c => (c.defects||[]).forEach(d => {
+      defectTypes[d.type] = (defectTypes[d.type]||0) + 1;
+    }));
+    const chart2 = echarts.init(defectEl);
+    chart2.setOption({
+      tooltip: { trigger: 'item' },
+      series: [{
+        type: 'pie', radius: ['35%', '65%'],
+        data: Object.entries(defectTypes).map(([k,v]) => ({ name: k, value: v })),
+        label: { color: '#e2e8f0', fontSize: 11 },
+      }],
+    });
+    window.addEventListener('resize', () => chart2.resize());
+  }
+
+  // 表格
+  const tbody = document.querySelector('#table-chapters tbody');
+  tbody.innerHTML = chapters.map(c => {
+    const g = grade(c.quality_score||0);
+    return `<tr>
+      <td>第${c.number}章</td>
+      <td>${c.file||''}</td>
+      <td>${c.quality_score||0}</td>
+      <td><span class="badge ${gradeClass(g)}">${g}</span></td>
+      <td>${c.word_count||0}</td>
+      <td>${(c.defects||[]).length}</td>
+    </tr>`;
+  }).join('');
+}
+
+// ── 代码面板 ──
+async function loadCode() {
+  const scan = await api('code-scan');
+  if (scan.error || !scan.files) return;
+
+  const files = scan.files.sort((a,b) => (a.quality_score||0) - (b.quality_score||0));
+  const langs = scan.summary?.languages || {};
+
+  // 语言饼图
+  const langEl = document.getElementById('chart-languages');
+  if (langEl) {
+    const chart = echarts.init(langEl);
+    chart.setOption({
+      tooltip: { trigger: 'item' },
+      series: [{
+        type: 'pie', radius: ['30%', '60%'],
+        data: Object.entries(langs).map(([k,v]) => ({ name: k, value: v })),
+        label: { color: '#e2e8f0', fontSize: 11 },
+      }],
+    });
+    window.addEventListener('resize', () => chart.resize());
+  }
+
+  // 代码分数直方图
+  const scoreEl = document.getElementById('chart-code-scores');
+  if (scoreEl) {
+    const buckets = [0,0,0,0,0]; // F,D,C,B,A
+    files.forEach(f => {
+      const s = f.quality_score || 0;
+      if (s >= 90) buckets[4]++;
+      else if (s >= 75) buckets[3]++;
+      else if (s >= 60) buckets[2]++;
+      else if (s >= 40) buckets[1]++;
+      else buckets[0]++;
+    });
+    const chart = echarts.init(scoreEl);
+    chart.setOption({
+      tooltip: { trigger: 'axis' },
+      xAxis: { type: 'category', data: ['F (<40)','D (40-59)','C (60-74)','B (75-89)','A (90+)'],
+               axisLabel: { color: '#94a3b8', fontSize: 10 } },
+      yAxis: { type: 'value', axisLabel: { color: '#94a3b8' },
+               splitLine: { lineStyle: { color: '#334155' } } },
+      series: [{
+        data: buckets.map((v,i) => ({
+          value: v,
+          itemStyle: { color: ['#ef4444','#f97316','#eab308','#84cc16','#22c55e'][i] }
+        })),
+        type: 'bar', barWidth: '50%',
+      }],
+      grid: { left: 40, right: 16, top: 16, bottom: 40 },
+    });
+    window.addEventListener('resize', () => chart.resize());
+  }
+
+  // 文件表格
+  const tbody = document.querySelector('#table-code-files tbody');
+  tbody.innerHTML = files.map(f => {
+    const g = f.score_detail?.grade || grade(f.quality_score||0);
+    return `<tr>
+      <td><code>${f.relative_path||f.file||''}</code></td>
+      <td>${f.language||''}</td>
+      <td>${f.line_count||0}</td>
+      <td>${f.quality_score||0}</td>
+      <td><span class="badge ${gradeClass(g)}">${g}</span></td>
+      <td>${(f.defects||[]).length}</td>
+    </tr>`;
+  }).join('');
+}
+
+// ── 趋势面板 ──
+async function loadTrends() {
+  const data = await api('trends');
+  if (data.error || !data.chapters) return;
+
+  const chartEl = document.getElementById('chart-trends');
+  if (!chartEl) return;
+
+  // 按章节绘制优化趋势
+  const chart = echarts.init(chartEl);
+  const chapterIds = Object.keys(data.chapters).sort((a,b) => parseInt(a) - parseInt(b));
+
+  const series = chapterIds.slice(0, 10).map(ch => {
+    const entries = data.chapters[ch]?.entries || [];
+    return {
+      name: `第${ch}章`,
+      type: 'line',
+      smooth: true,
+      data: entries.map(e => [e.timestamp || '', e.score_after || 0]),
+      symbol: 'circle',
+      symbolSize: 4,
+    };
+  });
+
+  chart.setOption({
+    tooltip: { trigger: 'axis' },
+    legend: { textStyle: { color: '#94a3b8', fontSize: 10 }, bottom: 0,
+              type: 'scroll' },
+    xAxis: { type: 'category', axisLabel: { color: '#94a3b8', fontSize: 10 } },
+    yAxis: { type: 'value', min: 0, max: 100,
+             axisLabel: { color: '#94a3b8' },
+             splitLine: { lineStyle: { color: '#334155' } } },
+    series: series,
+    grid: { left: 40, right: 16, top: 16, bottom: 60 },
+  });
+  window.addEventListener('resize', () => chart.resize());
+}
+
+// ── 初始化 ──
+(async function init() {
+  await loadOverview();
+  await loadTutorial();
+  loadCode();
+  loadTrends();
+})();
+</script>
+</body>
+</html>

@@ -1,6 +1,6 @@
 # 📚 OpenClaw 自动优化系统 v5.0
 
-> 统一自动化优化系统：教程文档 + 代码质量，双模式流水线。
+> 统一自动化优化系统：教程文档 + 代码质量，双模式流水线 + AI 精炼。
 
 ## 架构
 
@@ -13,6 +13,10 @@ openclaw-tutorial-auto/
 ├── workflow-pipeline.yaml   # OpenClaw 工作流 v5.0
 │
 ├── modules/                 # 功能模块
+│   ├── compat.py                # 兼容层: 统一 utils 导入 (消除 13 处重复)
+│   ├── diff_scanner.py          # 增量扫描: git diff 变更检测
+│   ├── notifier.py              # 通知: 飞书/企微/钉钉/Slack/Webhook 多渠道
+│   ├── ai_refiner.py            # AI 精炼: OpenClaw agent 驱动的智能优化
 │   ├── tutorial_scanner.py      # 教程扫描: 章节元数据、结构、缺陷
 │   ├── quality_analyzer.py      # 教程分析: 深度质量分析、优化计划
 │   ├── tutorial_refiner.py      # 教程精炼: 增量修复（12 种操作）
@@ -22,15 +26,20 @@ openclaw-tutorial-auto/
 │   ├── consistency_checker.py   # 教程一致性: 术语/格式一致检查
 │   ├── readability_analyzer.py  # 教程可读性: 段落密度/句长分析
 │   ├── optimization_tracker.py  # 教程追踪: 优化历史记录
-│   ├── code_scanner.py          # 代码扫描: 8 语言深度分析、五维度评分、缺陷检测
-│   ├── code_analyzer.py         # 代码分析: 31 种模板、优先级建议、引用元数据
-│   ├── code_refiner.py          # 代码修复: docstring/imports/whitespace/doxygen/javadoc
-│   └── suggestion_enricher.py   # 引用增强: 静态引用 + Web搜索最佳实践
+│   ├── code_scanner.py          # 代码扫描: 8 语言深度分析、五维度评分
+│   ├── code_analyzer.py         # 代码分析: 31 种模板、优先级建议
+│   ├── code_refiner.py          # 代码修复: docstring/imports/whitespace
+│   └── suggestion_enricher.py   # 引用增强: 静态引用 + Web 搜索
+│
+├── dashboard/               # 可视化 Dashboard
+│   ├── server.py                # HTTP API 服务器 (端口 8686)
+│   └── index.html               # ECharts 前端 (质量分布/趋势/缺陷)
 │
 ├── prompts/                 # AI 提示词（模块化）
 ├── templates/               # 输出模板
-├── utils/                   # 共享工具
-├── scripts/                 # 遗留脚本（向下兼容）
+├── utils/                   # 共享工具 (config/git_ops/markdown)
+├── scripts/                 # 活跃脚本 (utils/daemon/feishu/health_check 等)
+├── _archive/                # 归档遗留文件 (旧 workflow/scripts)
 └── .task-logs/              # 运行日志
 ```
 
@@ -68,11 +77,6 @@ scan → analyze → enrich → refine → report
 | **enrich** | `suggestion_enricher` | 为建议附加最佳实践参考链接（静态引用 + Web 搜索） |
 | **refine** | `code_refiner` | 自动修复 (docstring/doxygen/javadoc/imports/header_guard 等) |
 | **report** | code_pipeline 内置 | 生成 Markdown + HTML 双格式报告，含引用和分数表 |
-| **collect_refs** | `reference_collector` | 按章节主题匹配权威参考来源数据库 |
-| **refine** | `tutorial_refiner` | 按优先级对章节执行增量修复（导航、目录、标题、代码标签、FAQ、摘要、参考链接、中英文间距、密集段落拆分） |
-| **format** | `formatter` | 统一全仓 Markdown 格式（反引号、标题间距、空行、尾部空格、CJK 间距、链接格式） |
-| **git** | `utils/git_ops` | 安全提交 + 推送（白名单模式） |
-| **report** | pipeline 内置 | 生成结构化优化报告 |
 
 ## 使用方式
 
@@ -99,6 +103,34 @@ python3 code_pipeline.py /path --ext .py .js          # 仅指定扩展名
 ### 双模式 (教程 + 代码)
 ```bash
 python3 auto_optimizer.py --mode both --dry-run
+```
+
+### 增量 diff 模式
+```bash
+python3 auto_optimizer.py --diff --since HEAD~5         # 分析最近 5 次提交变更
+python3 auto_optimizer.py --diff --since 2026-03-01     # 从指定日期
+python3 auto_optimizer.py --diff --staged --dry-run     # 仅暂存区
+```
+
+### AI 精炼 (OpenClaw Agent)
+```bash
+python3 auto_optimizer.py --mode tutorial --ai-refine   # Pipeline + AI 精炼
+python3 auto_optimizer.py --ai-refine --ai-thinking high # 高思考级别
+python3 -m modules.ai_refiner --mode tutorial --file ch01.md --dry-run  # 单文件
+python3 -m modules.ai_refiner --mode code --file app.py               # 代码精炼
+python3 -m modules.ai_refiner --mode suggest --report analysis.json   # 智能建议
+```
+
+### Dashboard 可视化
+```bash
+python3 -m dashboard.server                             # 启动 http://localhost:8686
+python3 -m dashboard.server --port 9090                 # 自定义端口
+```
+
+### 通知
+```bash
+python3 -m modules.notifier --title "测试" --body "Hello" --level success
+python3 -m modules.notifier --channel feishu wecom      # 指定渠道
 ```
 
 ### 通过 OpenClaw Workflow

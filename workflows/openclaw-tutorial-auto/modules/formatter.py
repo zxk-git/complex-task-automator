@@ -15,49 +15,7 @@ import os
 import re
 import sys
 
-# ── 兼容 utils 导入 ────────────────────────────────
-_SCRIPTS = os.path.join(os.path.dirname(__file__), "..", "scripts")
-if _SCRIPTS not in sys.path:
-    sys.path.insert(0, _SCRIPTS)
-
-try:
-    from utils import setup_logger, cfg, save_json, word_count
-except ImportError:
-    import logging
-    def setup_logger(name):
-        """setup_logger 的功能描述。
-
-            Args:
-                name: ...
-            """
-        logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
-        return logging.getLogger(name)
-    def cfg(key, default=None):
-        """cfg 的功能描述。
-
-            Args:
-                key: ...
-                default: ...
-            """
-        return os.environ.get(key.replace(".", "_").upper(), default)
-    def save_json(path, data):
-        """save_json 的功能描述。
-
-            Args:
-                path: ...
-                data: ...
-            """
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-    def word_count(text):
-        """word_count 的功能描述。
-
-            Args:
-                text: ...
-            """
-        cjk = len(re.findall(r'[\u4e00-\u9fff]', text))
-        eng = len(re.findall(r'[a-zA-Z]+', text))
-        return cjk + eng
+from modules.compat import setup_logger, cfg, save_json, word_count
 
 def _read_file(filepath: str) -> str:
     """直接读取文件内容。"""

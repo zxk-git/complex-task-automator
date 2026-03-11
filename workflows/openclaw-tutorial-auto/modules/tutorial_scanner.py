@@ -15,79 +15,10 @@ import os
 import re
 import sys
 
-# ── 兼容 utils 导入 ────────────────────────────────
-_SCRIPTS = os.path.join(os.path.dirname(__file__), "..", "scripts")
-if _SCRIPTS not in sys.path:
-    sys.path.insert(0, _SCRIPTS)
-
-try:
-    from utils import (
-        setup_logger, cfg, load_json, save_json,
-        parse_outline, find_completed_chapters, word_count,
-    )
-except ImportError:
-    # 最小化回退: 独立运行时使用
-    import logging
-    def setup_logger(name):
-        """setup_logger 的功能描述。
-
-            Args:
-                name: ...
-            """
-        logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
-        return logging.getLogger(name)
-    def cfg(key, default=None):
-        """cfg 的功能描述。
-
-            Args:
-                key: ...
-                default: ...
-            """
-        return os.environ.get(key.replace(".", "_").upper(), default)
-    def save_json(path, data):
-        """save_json 的功能描述。
-
-            Args:
-                path: ...
-                data: ...
-            """
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-    def load_json(path, default=None):
-        """load_json 的功能描述。
-
-            Args:
-                path: ...
-                default: ...
-            """
-        try:
-            with open(path, encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            return default or {}
-    def word_count(text):
-        """word_count 的功能描述。
-
-            Args:
-                text: ...
-            """
-        cjk = len(re.findall(r'[\u4e00-\u9fff]', text))
-        eng = len(re.findall(r'[a-zA-Z]+', text))
-        return cjk + eng
-    def parse_outline(path):
-        """parse_outline 的功能描述。
-
-            Args:
-                path: ...
-            """
-        return []
-    def find_completed_chapters(d):
-        """find_completed_chapters 的功能描述。
-
-            Args:
-                d: ...
-            """
-        return {}
+from modules.compat import (
+    setup_logger, cfg, load_json, save_json,
+    parse_outline, find_completed_chapters, word_count,
+)
 
 def _read_file(filepath: str) -> str:
     """直接读取文件内容（不使用 legacy read_chapter）。"""

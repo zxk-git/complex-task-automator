@@ -27,52 +27,7 @@ import time
 
 import concurrent.futures
 
-# ── 兼容 utils 导入 ────────────────────────────────
-_SCRIPTS = os.path.join(os.path.dirname(__file__), "..", "scripts")
-if _SCRIPTS not in sys.path:
-    sys.path.insert(0, _SCRIPTS)
-
-try:
-    from utils import setup_logger, cfg, load_json, save_json
-except ImportError:
-    import logging
-    def setup_logger(name):
-        """setup_logger 的功能描述。
-
-            Args:
-                name: ...
-            """
-        logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
-        return logging.getLogger(name)
-    def cfg(key, default=None):
-        """cfg 的功能描述。
-
-            Args:
-                key: ...
-                default: ...
-            """
-        return os.environ.get(key.replace(".", "_").upper(), default)
-    def save_json(path, data):
-        """save_json 的功能描述。
-
-            Args:
-                path: ...
-                data: ...
-            """
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-    def load_json(path, default=None):
-        """load_json 的功能描述。
-
-            Args:
-                path: ...
-                default: ...
-            """
-        try:
-            with open(path, encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            return default or {}
+from modules.compat import setup_logger, cfg, load_json, save_json
 
 log = setup_logger("link_checker")
 

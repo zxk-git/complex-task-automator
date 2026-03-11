@@ -18,19 +18,7 @@ import re
 import sys
 import time
 
-_SCRIPTS = os.path.join(os.path.dirname(__file__), "..", "scripts")
-if _SCRIPTS not in sys.path:
-    sys.path.insert(0, _SCRIPTS)
-
-try:
-    from utils import setup_logger, cfg
-except ImportError:
-    import logging
-    def setup_logger(name):
-        logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
-        return logging.getLogger(name)
-    def cfg(key, default=None):
-        return os.environ.get(key.replace(".", "_").upper(), default)
+from modules.compat import setup_logger, cfg
 
 log = setup_logger("suggestion_enricher")
 

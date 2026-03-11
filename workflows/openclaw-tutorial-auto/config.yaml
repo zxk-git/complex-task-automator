@@ -76,6 +76,27 @@ feishu:
   notify_on_optimize: true          # 优化后自动通知
   notify_on_error: true             # 错误时通知
 
+# ── 通用多渠道通知 (modules/notifier.py) ──────────────
+notify:
+  channels:
+    feishu:
+      enabled: true                 # 复用上面 feishu 配置
+    wecom:
+      enabled: false
+      # webhook_url: "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=YOUR_KEY"
+    dingtalk:
+      enabled: false
+      # webhook_url: "https://oapi.dingtalk.com/robot/send?access_token=YOUR_TOKEN"
+      # secret: "SECxxx"
+    slack:
+      enabled: false
+      # webhook_url: "https://hooks.slack.com/services/xxx/yyy/zzz"
+    webhook:
+      enabled: false
+      # webhook_url: "https://your-api.example.com/webhook"
+      # headers:
+      #   Authorization: "Bearer YOUR_TOKEN"
+
 # ── Git ──────────────────────────────────────────────
 git:
   auto_commit: true
@@ -114,6 +135,15 @@ enricher:
   max_refs_per_suggestion: 3         # 每条建议最多引用数
   cache_max_days: 7                  # Web 搜索缓存过期天数
   static_refs_only: false            # 仅使用静态引用（不搜索）
+
+# ── AI 精炼 (modules/ai_refiner.py) ──────────────────
+ai_refiner:
+  agent: "coding"                    # OpenClaw agent ID
+  thinking: "medium"                 # off / minimal / low / medium / high
+  timeout: 120                       # 单次调用超时秒数
+  max_content_length: 12000          # 最大输入内容长度 (字符)
+  auto_on_low_score: true            # 自动对低分章节启用 AI 精炼
+  score_threshold: 75                # 低于此分触发 AI 精炼
 
 log_level: INFO
 

@@ -25,15 +25,8 @@ import time
 
 # 确保模块路径
 _ROOT = os.path.dirname(os.path.abspath(__file__))
-_MODULES = os.path.join(_ROOT, "modules")
-_UTILS = os.path.join(_ROOT, "utils")
-_SCRIPTS = os.path.join(_ROOT, "scripts")
-
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
-# scripts/ must be in path for legacy utils.py
-if _SCRIPTS not in sys.path:
-    sys.path.insert(0, _SCRIPTS)
 
 # ── 导入模块 ──
 from modules.tutorial_scanner import scan_repository
@@ -45,43 +38,7 @@ from modules.link_checker import check_all as check_links
 from modules.consistency_checker import check_all as check_consistency
 from modules.readability_analyzer import analyze_all as analyze_readability
 from modules.optimization_tracker import record_batch, analyze_trends
-
-# Import from scripts/utils.py (legacy shared utils)
-try:
-    # scripts/utils.py provides setup_logger, cfg, save_json
-    import importlib
-    _utils_mod = importlib.import_module("utils")
-    setup_logger = _utils_mod.setup_logger
-    cfg = _utils_mod.cfg
-    save_json = _utils_mod.save_json
-except (ImportError, AttributeError):
-    import logging
-    def setup_logger(name):
-        """setup_logger 的功能描述。
-
-            Args:
-                name: ...
-            """
-        logging.basicConfig(level=logging.INFO,
-                            format="%(asctime)s %(levelname)s [%(name)s] %(message)s")
-        return logging.getLogger(name)
-    def cfg(key, default=None):
-        """cfg 的功能描述。
-
-            Args:
-                key: ...
-                default: ...
-            """
-        return os.environ.get(key.replace(".", "_").upper(), default)
-    def save_json(path, data):
-        """save_json 的功能描述。
-
-            Args:
-                path: ...
-                data: ...
-            """
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+from modules.compat import setup_logger, cfg, save_json
 
 log = setup_logger("pipeline")
 
@@ -119,7 +76,7 @@ class Pipeline:
         os.makedirs(OUTPUT_DIR, exist_ok=True)
 
         log.info("╔════════════════════════════════════════════════╗")
-        log.info("║  📚 教程自动优化流水线 v4.0                    ║")
+        log.info("║  📚 教程自动优化流水线 v5.0                    ║")
         log.info("╚════════════════════════════════════════════════╝")
         log.info(f"项目: {PROJECT_DIR}")
         log.info(f"输出: {OUTPUT_DIR}")
@@ -315,12 +272,26 @@ class Pipeline:
             return {"committed": False, "pushed": False, "error": str(e)}
 
     def _stage_report(self):
-        """阶段 7: 生成综合报告。"""
+        """阶段 7: 生成综合报告并推送通知。"""
         report = self._generate_summary_report()
         report_path = os.path.join(OUTPUT_DIR, "pipeline-report.md")
         with open(report_path, "w", encoding="utf-8") as f:
             f.write(report)
         log.info(f"  报告: {report_path}")
+
+        # ── 推送通知 ──
+        try:
+            from modules.notifier import notify_pipeline
+            scan = self.results.get("scan", {}).get("data", {})
+            summary = scan.get("summary", {})
+            notify_pipeline("tutorial", {
+                "version": "5.0",
+                "duration": time.time() - self.start_time if self.start_time else 0,
+                "summary": summary,
+            })
+        except Exception as e:
+            log.warning(f"  通知发送失败 (非致命): {e}")
+
         return {"report_path": report_path}
 
     def _generate_summary_report(self) -> str:
@@ -469,7 +440,7 @@ class Pipeline:
             "",
             "---",
             "",
-            "> 自动生成 by OpenClaw Tutorial Auto Pipeline v4.0",
+            "> 自动生成 by OpenClaw Tutorial Auto Pipeline v5.0",
         ])
 
         return "\n".join(lines)
@@ -478,7 +449,7 @@ class Pipeline:
         """生成最终的 JSON 结果。"""
         duration = time.time() - self.start_time if self.start_time else 0
         report = {
-            "pipeline_version": "4.0",
+            "pipeline_version": "5.0",
             "timestamp": datetime.now(tz=timezone.utc).isoformat(),
             "duration_seconds": round(duration, 1),
             "dry_run": self.dry_run,

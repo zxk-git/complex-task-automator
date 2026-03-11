@@ -14,6 +14,8 @@ auto_optimizer.py — 统一自动优化入口
   python3 auto_optimizer.py --mode code /path/to/project # 代码模式
   python3 auto_optimizer.py --mode code --dry-run        # 代码干跑
   python3 auto_optimizer.py --mode both                  # 两种都运行
+  python3 auto_optimizer.py --diff --since HEAD~3         # 增量模式
+  python3 auto_optimizer.py --diff --staged               # 仅分析暂存区
 """
 
 import argparse
@@ -24,20 +26,7 @@ _ROOT = os.path.dirname(os.path.abspath(__file__))
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
-_SCRIPTS = os.path.join(_ROOT, "scripts")
-if _SCRIPTS not in sys.path:
-    sys.path.insert(0, _SCRIPTS)
-
-try:
-    import importlib
-    _utils_mod = importlib.import_module("utils")
-    setup_logger = _utils_mod.setup_logger
-except (ImportError, AttributeError):
-    import logging
-    def setup_logger(name):
-        logging.basicConfig(level=logging.INFO,
-                            format="%(asctime)s %(levelname)s [%(name)s] %(message)s")
-        return logging.getLogger(name)
+from modules.compat import setup_logger
 
 log = setup_logger("auto_optimizer")
 
@@ -155,6 +144,23 @@ def main():
     parser.add_argument("--ext", nargs="+", default=None,
                         help="[code] 仅扫描指定扩展名")
 
+    # 增量模式参数
+    parser.add_argument("--diff", action="store_true",
+                        help="增量模式: 仅分析 git diff 变更的文件")
+    parser.add_argument("--since", type=str, default="HEAD~1",
+                        help="[diff] Git 起始点 (默认: HEAD~1)")
+    parser.add_argument("--staged", action="store_true",
+                        help="[diff] 仅分析暂存区")
+
+    # AI 精炼参数
+    parser.add_argument("--ai-refine", action="store_true",
+                        help="启用 AI 精炼 (通过 OpenClaw agent)")
+    parser.add_argument("--ai-agent", type=str, default="coding",
+                        help="[ai] OpenClaw agent ID (默认: coding)")
+    parser.add_argument("--ai-thinking", type=str, default="medium",
+                        choices=["off", "minimal", "low", "medium", "high"],
+                        help="[ai] 思考级别 (默认: medium)")
+
     args = parser.parse_args()
 
     # 自动检测模式
@@ -179,6 +185,44 @@ def main():
 
     results = {}
 
+    # ── 增量 diff 模式 ──
+    if getattr(args, "diff", False):
+        from modules.diff_scanner import scan_diff
+        diff_dir = args.project_dir or os.environ.get(
+            "PROJECT_DIR",
+            "/root/.openclaw/workspace/zxk-private/openclaw-tutorial-auto"
+        )
+        log.info("")
+        log.info("=" * 60)
+        log.info("  📋 增量 diff 模式")
+        log.info("=" * 60)
+        diff_result = scan_diff(
+            project_dir=diff_dir,
+            since=getattr(args, "since", "HEAD~1"),
+            staged=getattr(args, "staged", False),
+        )
+        results["diff"] = diff_result
+        s = diff_result["summary"]
+        log.info(f"  变更文件: {diff_result['total_changed']}")
+        log.info(f"  教程: {s['tutorial_count']}, 代码: {s['code_count']}")
+        if s["chapters_affected"]:
+            log.info(f"  影响章节: {s['chapters_affected']}")
+        if s["languages_affected"]:
+            log.info(f"  影响语言: {s['languages_affected']}")
+
+        # 设置环境变量供后续 pipeline 过滤
+        os.environ["DIFF_MODE"] = "true"
+        os.environ["DIFF_SINCE"] = getattr(args, "since", "HEAD~1")
+
+        # 自动决定运行哪些模式
+        if s["tutorial_count"] > 0:
+            mode = "tutorial" if s["code_count"] == 0 else "both"
+        elif s["code_count"] > 0:
+            mode = "code"
+        else:
+            log.info("  无需优化的变更文件")
+            sys.exit(0)
+
     if mode in ("tutorial", "both"):
         log.info("")
         log.info("=" * 60)
@@ -199,6 +243,54 @@ def main():
         log.info("  🔧 代码优化模式")
         log.info("=" * 60)
         results["code"] = run_code_mode(args)
+
+    # ── AI 精炼 ──
+    if getattr(args, "ai_refine", False):
+        log.info("")
+        log.info("=" * 60)
+        log.info("  🤖 AI 精炼 (OpenClaw)")
+        log.info("=" * 60)
+        try:
+            from modules.ai_refiner import ai_refine_batch
+            os.environ.setdefault("OPENCLAW_AGENT", getattr(args, "ai_agent", "coding"))
+            os.environ.setdefault("OPENCLAW_THINKING", getattr(args, "ai_thinking", "medium"))
+
+            # 从已有结果中提取待精炼条目
+            chapters = []
+            code_files = []
+            if "tutorial" in results:
+                scan_data = results["tutorial"].get("stage_results", {}).get("scan", {}).get("data", {})
+                analysis_data = results["tutorial"].get("stage_results", {}).get("analyze", {}).get("data", {})
+                for ch in analysis_data.get("chapters", []):
+                    if ch.get("quality_score", 100) < 75:  # 只对 B 级以下做 AI 精炼
+                        project_dir = os.environ.get("PROJECT_DIR",
+                            "/root/.openclaw/workspace/zxk-private/openclaw-tutorial-auto")
+                        chapters.append({
+                            "path": os.path.join(project_dir, ch.get("file", "")),
+                            "defects": ch.get("defects", []),
+                            "chapter": ch.get("chapter", 0),
+                            "score": ch.get("quality_score", 0),
+                            "grade": ch.get("grade", "?"),
+                        })
+            if "code" in results:
+                scan_data = results["code"].get("stage_results", {}).get("scan", {}).get("data", {})
+                for f in scan_data.get("files", []):
+                    if f.get("quality_score", 100) < 75:
+                        code_files.append({
+                            "path": f.get("file", ""),
+                            "language": f.get("language", "python"),
+                            "defects": f.get("defects", []),
+                        })
+
+            ai_result = ai_refine_batch(chapters=chapters, code_files=code_files)
+            results["ai_refine"] = ai_result
+            t_ok = sum(1 for r in ai_result.get("tutorial", []) if r.get("ok"))
+            c_ok = sum(1 for r in ai_result.get("code", []) if r.get("ok"))
+            log.info(f"  AI 精炼: 教程 {t_ok} 章, 代码 {c_ok} 文件, "
+                     f"建议 {len(ai_result.get('suggestions', []))} 条")
+        except Exception as e:
+            log.error(f"  AI 精炼失败 (非致命): {e}")
+            results["ai_refine"] = {"error": str(e)}
 
     # 汇总
     total_ok = sum(r.get("stages_ok", 0) for r in results.values())

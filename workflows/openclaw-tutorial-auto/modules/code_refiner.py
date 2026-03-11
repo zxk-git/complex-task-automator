@@ -20,22 +20,7 @@ import os
 import re
 import sys
 
-_SCRIPTS = os.path.join(os.path.dirname(__file__), "..", "scripts")
-if _SCRIPTS not in sys.path:
-    sys.path.insert(0, _SCRIPTS)
-
-try:
-    from utils import setup_logger, cfg, save_json
-except ImportError:
-    import logging
-    def setup_logger(name):
-        logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
-        return logging.getLogger(name)
-    def cfg(key, default=None):
-        return os.environ.get(key.replace(".", "_").upper(), default)
-    def save_json(path, data):
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+from modules.compat import setup_logger, cfg, save_json
 
 log = setup_logger("code_refiner")
 
