@@ -12,12 +12,14 @@
 - 标题中不使用代码标记（除非是技术名词）
 
 ### 章首导航
-每章文件开头应有：
+每章文件开头应有居中导航（HTML 格式）：
 
 ```markdown
-> **📖 OpenClaw 中文实战教程** | [← 上一章：xxx](NN-xxx.md) | [目录](README.md) | [下一章：xxx →](NN-xxx.md)
+<div align="center">
 
----
+[← 第 NN 章](NN-xxx.md) · [📑 目录](README.md) · [📋 大纲](OUTLINE.md) · [第 MM 章 →](MM-xxx.md)
+
+</div>
 
 # 第N章 标题
 
@@ -102,7 +104,11 @@ openclaw skill install tavily-search
 
 ---
 
-> **📖 章节导航** | [← 上一章：xxx](NN-xxx.md) | [目录](README.md) | [下一章：xxx →](NN-xxx.md)
+<div align="center">
+
+[← 上一章：xxx](NN-xxx.md) · [📑 返回目录](README.md) · [下一章：xxx →](MM-xxx.md)
+
+</div>
 ```
 
 ## 格式化操作

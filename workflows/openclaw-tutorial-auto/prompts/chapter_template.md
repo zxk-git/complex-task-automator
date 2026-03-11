@@ -5,9 +5,11 @@
 ---
 
 ```markdown
-> **📖 OpenClaw 中文实战教程** | [← 上一章：{prev_title}]({prev_file}) | [目录](README.md) | [下一章：{next_title} →]({next_file})
+<div align="center">
 
----
+[← 第 {prev_N} 章]({prev_file}) · [📑 目录](README.md) · [📋 大纲](OUTLINE.md) · [第 {next_N} 章 →]({next_file})
+
+</div>
 
 # 第{N}章 {title}
 
@@ -174,7 +176,11 @@
 
 ---
 
-> **📖 章节导航** | [← 上一章：{prev_title}]({prev_file}) | [目录](README.md) | [下一章：{next_title} →]({next_file})
+<div align="center">
+
+[← 上一章：{prev_title}]({prev_file}) · [📑 返回目录](README.md) · [下一章：{next_title} →]({next_file})
+
+</div>
 ```
 
 ## 模板使用说明

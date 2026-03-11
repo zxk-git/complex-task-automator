@@ -29,7 +29,7 @@ log = setup_logger("tutorial_scanner")
 # ── 预编译正则 (避免每章重复编译) ────────────────────
 _RE_HEADING = re.compile(r"^(#{1,6})\s+(.+)")
 _RE_TOC = re.compile(r"##\s*📑?\s*本章目录|##\s*目录")
-_RE_NAV = re.compile(r"\[←\s*上一章|上一章.*\]\(")
+_RE_NAV = re.compile(r"\[←\s*上一章|上一章.*\]\(|\[←\s*第\s*\d+\s*章\]|\[📑\s*目录\]\(README\.md\)|\[📑\s*返回目录\]")
 _RE_CODE_BLOCK = re.compile(r"```(\w*)")
 _RE_TABLE = re.compile(r"^\|.+\|$\n\|[-:| ]+\|$", re.MULTILINE)
 _RE_IMAGE = re.compile(r"!\[.*?\]\(.*?\)")

@@ -71,26 +71,62 @@ def _get_chapter_nav_info(project_dir: str) -> dict:
 
 # ── 精炼操作实现 ────────────────────────────────────
 
+def _build_header_nav(info: dict) -> str:
+    """构建居中的章首导航 HTML 块。"""
+    parts = []
+    if info["prev_file"]:
+        prev_num = re.match(r"(\d+)", info["prev_file"])
+        pn = prev_num.group(1) if prev_num else ""
+        parts.append(f"[← 第 {pn} 章]({info['prev_file']})")
+    parts.append("[📑 目录](README.md)")
+    parts.append("[📋 大纲](OUTLINE.md)")
+    if info["next_file"]:
+        next_num = re.match(r"(\d+)", info["next_file"])
+        nn = next_num.group(1) if next_num else ""
+        parts.append(f"[第 {nn} 章 →]({info['next_file']})")
+    return '<div align="center">\n\n' + " · ".join(parts) + "\n\n</div>"
+
+
+def _build_footer_nav(info: dict) -> str:
+    """构建居中的章尾导航 HTML 块。"""
+    parts = []
+    if info["prev_file"]:
+        parts.append(f"[← 上一章：{info['prev_title']}]({info['prev_file']})")
+    parts.append("[📑 返回目录](README.md)")
+    if info["next_file"]:
+        parts.append(f"[下一章：{info['next_title']} →]({info['next_file']})")
+    return '---\n\n<div align="center">\n\n' + " · ".join(parts) + "\n\n</div>"
+
+
+# 导航检测正则：匹配旧格式（blockquote）和新格式（div centered）
+_RE_NAV_HEADER = re.compile(
+    r'\[←\s*上一章|\[目录\]\(README\.md\)|<div align="center">.*\[📑 目录\]',
+    re.DOTALL,
+)
+_RE_NAV_FOOTER = re.compile(
+    r'📖\s*章节导航|<div align="center">.*\[📑 返回目录\]',
+    re.DOTALL,
+)
+
+
 def add_chapter_navigation(text: str, chapter_num: int, nav_info: dict) -> tuple:
-    """添加章首和章尾导航。返回 (修改后文本, 变更描述)。"""
+    """添加章首和章尾导航（居中 HTML 格式）。返回 (修改后文本, 变更描述)。"""
     info = nav_info.get(chapter_num)
     if not info:
         return text, None
 
     changes = []
-    prev_link = f"[← 上一章：{info['prev_title']}]({info['prev_file']})" if info["prev_file"] else ""
-    next_link = f"[下一章：{info['next_title']} →]({info['next_file']})" if info["next_file"] else ""
-    nav_bar = f"> **📖 OpenClaw 中文实战教程** | {prev_link} | [目录](README.md) | {next_link}"
 
     # 章首导航
-    if not re.search(r"\[←\s*上一章|\[目录\]\(README\.md\)", text[:500]):
-        text = nav_bar + "\n\n---\n\n" + text
+    if not _RE_NAV_HEADER.search(text[:800]):
+        header = _build_header_nav(info)
+        text = header + "\n\n" + text
         changes.append("added header navigation")
 
     # 章尾导航
-    if not re.search(r"📖\s*章节导航", text[-500:]):
-        footer_nav = f"\n\n---\n\n> **📖 章节导航** | {prev_link} | [目录](README.md) | {next_link}\n"
-        text = text.rstrip() + footer_nav
+    if not _RE_NAV_FOOTER.search(text[-800:]):
+        footer = _build_footer_nav(info)
+        text = text.rstrip() + "\n\n" + footer + "\n"
         changes.append("added footer navigation")
 
     return text, changes if changes else None
