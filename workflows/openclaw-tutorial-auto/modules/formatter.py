@@ -105,33 +105,41 @@ def format_chapter(filepath: str) -> dict:
         fixes.append({"type": "eof_newline", "fix": "normalized final newlines"})
 
     # ── 6. 中英文间距 (CJK-Latin spacing) ──
-    pre = text
-    text = re.sub(r'([\u4e00-\u9fff])([A-Za-z0-9`])', r'\1 \2', text)
-    text = re.sub(r'([A-Za-z0-9`])([\u4e00-\u9fff])', r'\1 \2', text)
-    if text != pre:
-        spacing_fixes = abs(len(text) - len(pre))
-        fixes.append({"type": "cjk_spacing", "count": spacing_fixes,
-                       "fix": f"added {spacing_fixes} CJK-Latin spaces"})
+    # 跳过代码块内容，避免误修改代码
+    fmt_lines = text.split("\n")
+    fmt_new_lines = []
+    in_fmt_code = False
+    spacing_fix_count = 0
+    for fmt_line in fmt_lines:
+        if fmt_line.strip().startswith("```"):
+            in_fmt_code = not in_fmt_code
+            fmt_new_lines.append(fmt_line)
+            continue
+        if in_fmt_code:
+            fmt_new_lines.append(fmt_line)
+            continue
+        # 保护行内代码
+        _inline_codes = []
+        def _preserve_ic(m, _codes=_inline_codes):
+            _codes.append(m.group(0))
+            return f"\x00IC{len(_codes)-1}\x00"
+        protected_line = re.sub(r'`[^`]+`', _preserve_ic, fmt_line)
+        fixed_line = re.sub(r'([\u4e00-\u9fff])([A-Za-z0-9])', r'\1 \2', protected_line)
+        fixed_line = re.sub(r'([A-Za-z0-9])([\u4e00-\u9fff])', r'\1 \2', fixed_line)
+        for idx, ic in enumerate(_inline_codes):
+            fixed_line = fixed_line.replace(f"\x00IC{idx}\x00", ic)
+        if fixed_line != fmt_line:
+            spacing_fix_count += 1
+        fmt_new_lines.append(fixed_line)
+        _inline_codes.clear()
+    text = "\n".join(fmt_new_lines)
+    if spacing_fix_count:
+        fixes.append({"type": "cjk_spacing", "count": spacing_fix_count,
+                       "fix": f"added CJK-Latin spaces in {spacing_fix_count} lines (code-aware)"})
 
-    # ── 6b. 旧式提示转 GitHub Alert ──
-    alert_patterns = [
-        (r">\s*\*\*💡\s*提示\*\*[：:]\s*", "> [!TIP]\n> "),
-        (r">\s*\*\*⚠️\s*注意\*\*[：:]\s*", "> [!WARNING]\n> "),
-        (r">\s*\*\*📌\s*关键\*\*[：:]\s*", "> [!IMPORTANT]\n> "),
-        (r">\s*\*\*❗\s*警告\*\*[：:]\s*", "> [!CAUTION]\n> "),
-        (r">\s*\*\*📝\s*备注\*\*[：:]\s*", "> [!NOTE]\n> "),
-        (r">\s*\*\*提示\*\*[：:]\s*", "> [!TIP]\n> "),
-        (r">\s*\*\*注意\*\*[：:]\s*", "> [!WARNING]\n> "),
-    ]
-    alert_count = 0
-    for pat, repl in alert_patterns:
-        found = re.findall(pat, text)
-        if found:
-            text = re.sub(pat, repl, text)
-            alert_count += len(found)
-    if alert_count:
-        fixes.append({"type": "github_alerts", "count": alert_count,
-                       "fix": f"converted {alert_count} callouts to GitHub Alerts"})
+    # ── 6b. [已移至 refiner] 旧式提示转 GitHub Alert ──
+    # 该功能由 tutorial_refiner.convert_to_github_alerts 统一处理，
+    # 此处不再重复执行，避免双重修改和计数不准确。
 
     # ── 7. 表格对齐检查 ──
     table_issues = _check_table_alignment(text)
@@ -189,17 +197,26 @@ def _check_table_alignment(text: str) -> list:
 
 
 def _compute_format_score(text: str) -> float:
-    """计算格式规范得分 (0-100)。"""
+    """计算格式规范得分 (0-100)，代码块感知。"""
     score = 100.0
     deductions = 0
 
-    # 标题跳级 (-5 each)
+    # 标题跳级 (-5 each, 跳过代码块)
     prev_level = 0
-    for m in re.finditer(r"^(#{1,6})\s+", text, re.MULTILINE):
-        level = len(m.group(1))
-        if prev_level > 0 and level > prev_level + 1:
-            deductions += 5
-        prev_level = level
+    in_code = False
+    for line in text.split("\n"):
+        stripped = line.strip()
+        if stripped.startswith("```"):
+            in_code = not in_code
+            continue
+        if in_code:
+            continue
+        m = re.match(r"^(#{1,6})\s+", line)
+        if m:
+            level = len(m.group(1))
+            if prev_level > 0 and level > prev_level + 1:
+                deductions += 5
+            prev_level = level
 
     # 4反引号 (-3 each)
     deductions += len(re.findall(r"````", text)) * 3
@@ -218,8 +235,9 @@ def _compute_format_score(text: str) -> float:
             else:
                 in_cb = False
 
-    # 未标注语言的代码块 (-2 each)
-    deductions += len(re.findall(r"^```\s*$", text, re.MULTILINE)) * 2
+    # 未标注语言的代码块 (-0.5 each, max -10, 调低权重避免技术教程评分过低)
+    unlabeled_count = len(re.findall(r"^```\s*$", text, re.MULTILINE))
+    deductions += min(unlabeled_count * 0.5, 10)
 
     # 行尾空白 (-0.5 each, max -5)
     trailing = len(re.findall(r"[ \t]+$", text, re.MULTILINE))

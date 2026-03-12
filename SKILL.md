@@ -1,8 +1,8 @@
 ```skill
 ---
 name: complex-task-automator
-version: 5.1.0
-description: "高级任务自动化引擎 — 双模式流水线 (教程11阶段 + 代码5阶段)、AI 精炼、插件热加载、YAML 评分规则引擎、交互式 CLI、异步任务队列、ECharts Dashboard。支持 8 语言代码分析、六维度质量检测、24/7 自动调度、多渠道通知 (飞书/企微/钉钉/Slack)。"
+version: 5.2.0
+description: "高级任务自动化引擎 — 双模式流水线 (教程13阶段 + 代码5阶段)、目录发现、README自动更新、AI 精炼、插件热加载、YAML 评分规则引擎、交互式 CLI、异步任务队列、ECharts Dashboard。支持 8 语言代码分析、六维度质量检测、24/7 自动调度、多渠道通知 (飞书/企微/钉钉/Slack)。"
 author: openclaw
 metadata:
   tags:
@@ -31,6 +31,9 @@ metadata:
     - "Git 推送"
     - "教程自动化"
     - "写作助手"
+    - "目录发现"
+    - "README 自动生成"
+    - "教程目录扫描"
     - "24/7 自动化"
     - "定时调度"
     - "批量生成"
@@ -54,7 +57,7 @@ metadata:
 
 | 特性 | 说明 |
 |------|------|
-| **🔧 双模式流水线** | 教程优化 (11 阶段) + 代码质量分析 (5 阶段)，BasePipeline 统一基类 |
+| **🔧 双模式流水线** | 教程优化 (14 阶段) + 代码质量分析 (5 阶段)，BasePipeline 统一基类 |
 | **🤖 AI 精炼** | OpenClaw Agent 驱动的智能优化（教程/代码/建议三模式） |
 | **🔌 插件热加载** | 11 种 Hook + 文件级插件自动发现 + 运行时重载 |
 | **📊 评分规则引擎** | YAML 可配置维度/规则/等级，20+ 内建检查函数 |
@@ -63,7 +66,7 @@ metadata:
 | **📈 Dashboard** | ECharts 5 实时可视化 (质量分布/趋势/缺陷) |
 | **📢 多渠道通知** | 飞书/企微/钉钉/Slack/Webhook |
 | **🔍 代码分析** | 8 语言深度扫描 + 五维度评分 + 31 种优化建议模板 |
-| **📝 文档自动化** | 信息搜集 → 大纲 → 撰写 → 质检 → Git 推送全链路 |
+| **📝 文档自动化** | 目录发现 → 信息搜集 → 大纲 → 撰写 → 质检 → README → Git 推送全链路 |
 | **⚙️ 任务引擎** | 拓扑排序 + 并行执行 + 6 种执行器 + Hooks 系统 |
 | **🛡️ 安全可控** | DRY_RUN 模式、文件保护、Git 白名单 |
 
@@ -120,6 +123,7 @@ git clone https://github.com/zxk-git/complex-task-automator.git ~/.openclaw/skil
 ```bash
 cd workflows/openclaw-tutorial-auto
 python3 cli.py                    # 进入交互模式
+python3 cli.py discover           # 目录发现
 python3 cli.py scan               # 直接扫描
 python3 cli.py --dry-run          # 干跑模式
 ```
@@ -127,7 +131,7 @@ python3 cli.py --dry-run          # 干跑模式
 ### 流水线模式
 
 ```bash
-# 教程优化
+# 教程优化 (完整 14 阶段: discover → scan → ... → fix_issues → ... → update_readme → git → report)
 python3 workflows/openclaw-tutorial-auto/auto_optimizer.py --mode tutorial --dry-run
 
 # 代码质量分析
@@ -180,18 +184,34 @@ openclaw> help              # 完整命令列表
 ### 完整工作链
 
 ```
-信息搜集 (research.py)
-    ↓ research-data.json
-大纲分析 (manage_outline.py)
-    ↓ outline-analysis.json
-内容撰写 (write_chapter.py)
-    ↓ 03-XXX.md (草稿)
-质量检查 (check_quality.py)
-    ↓ 02-quality-check.json
-Git 提交 (git_workflow.py)
+目录发现 (discover)
+    ↓ discover-report.json     ← 递归扫描教程目录，列出所有文档
+仓库扫描 (scan)
+    ↓ scan-report.json         ← 逐文件质量评分 (六维度)
+质量分析 (analyze)
+    ↓ analysis-report.json     ← 生成优化计划
+参考搜集 (collect_refs)
+    ↓ references.json
+断链检测 (check_links)
+    ↓ link-check-report.json
+一致性检测 (check_consistency)
+    ↓ consistency-report.json
+可读性分析 (check_readability)
+    ↓ readability-report.json
+问题自动修复 (fix_issues)      ← 自动修复断链+术语不一致
+    ↓ fix-issues-report.json
+内容精炼 (refine)              ← 批量处理所有文档，不跳过
+    ↓ refine-result.json
+格式统一 (format)
+    ↓ format-result.json
+优化追踪 (track)
+    ↓ optimization-trends.json
+README 更新 (update_readme)    ← 所有文档优化后自动更新
+    ↓ README.md
+Git 提交 (git)
     ↓ commit [+ push]
-报告生成 (generate_report.py)
-    ↓ .automation-report.md
+报告生成 (report)
+    ↓ pipeline-report.md
 ```
 
 ### 标准工作流配置
@@ -846,15 +866,15 @@ Git 提交 + 推送
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                    Complex Task Automator v5.1                      │
+│                    Complex Task Automator v5.2                      │
 ├──────────────────────────┬──────────────────────────────────────────┤
-│    Task Engine Layer     │      Pipeline Layer (v5.1)               │
+│    Task Engine Layer     │      Pipeline Layer (v5.2)               │
 │                          │                                          │
 │  ┌──────┐ ┌──────────┐  │  ┌──────────────┐  ┌──────────────────┐ │
 │  │Parser│ │Scheduler │  │  │BasePipeline  │  │PluginManager     │ │
 │  └──┬───┘ └────┬─────┘  │  │  ┌────────┐  │  │ discover/load    │ │
 │     │          │         │  │  │Pipeline│  │  │ trigger(hook)    │ │
-│  ┌──▼──────────▼──────┐ │  │  │ 11阶段 │  │  │ 11 hooks         │ │
+│  ┌──▼──────────▼──────┐ │  │  │ 14阶段 │  │  │ 11 hooks         │ │
 │  │ Execution Engine   │ │  │  ├────────┤  │  └────────┬─────────┘ │
 │  │ 6 executors        │ │  │  │CodePipe│  │           │           │
 │  │ hooks/retry/resume │ │  │  │ 5 阶段 │  │  ┌────────▼─────────┐ │
@@ -906,7 +926,7 @@ compat.py ←── types.py
          ↑
     base_pipeline.py ←── plugin_loader.py
          ↑
-    ├── pipeline.py (Tutorial, 11 stages)
+    ├── pipeline.py (Tutorial, 14 stages)
     └── code_pipeline.py (Code, 5 stages)
          ↑
     ├── auto_optimizer.py
@@ -1891,6 +1911,21 @@ task-graph <workflow.yaml>
 ---
 
 ## 版本历史
+
+### v5.2.0 (2026-03-15)
+- **新增** `fix_issues` 阶段 — 自动修复断链和术语不一致 (3 策略链接修复 + 术语/URL 规范化)
+- **新增** `discover` 阶段 — 递归扫描教程目录，区分根目录与子目录文件
+- **新增** `update_readme` 阶段 — 所有文档优化后自动生成 README
+- **新增** `modules/readme_generator.py` — README 自动生成器
+- **改进** `tutorial_scanner.py` — 代码块感知：避免 bash 注释被误计为标题
+- **改进** `formatter.py` — 评分权重优化：未标记代码块惩罚 -2→-0.5 (上限 -10)
+- **改进** `consistency_checker.py` — 新增 `auto_fix()` 自动修复术语/URL 变体
+- **改进** `link_checker.py` — 新增 `auto_fix_internal()` 三策略断链修复
+- **改进** 教程流水线从 11 → 14 阶段 (新增 discover/fix_issues/update_readme)
+- **改进** 检查阶段结果数据流入修复阶段 (check→fix→refine)
+- **改进** 默认启用 Web 搜索 (`--no-web-search` 可禁用)
+- **修复** ch16 评分为 0 的问题 (代码块内 bash 注释被误计为 H1)
+- **修复** discover 阶段 59 vs scan 21 的误导性警告
 
 ### v5.1.0 (2026-03-14)
 - **新增** `plugin_loader.py` — 插件热加载系统 (11 种 Hook, pipe 模式, 优先级排序)

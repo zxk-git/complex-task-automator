@@ -529,6 +529,8 @@ def run():
                         help="启用外部 URL 探活 (耗时)")
     parser.add_argument("--project-dir", type=str, default=None,
                         help="项目目录")
+    parser.add_argument("--auto-fix", action="store_true",
+                        help="自动修复可修复的断链")
     args = parser.parse_args()
 
     os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -536,6 +538,13 @@ def run():
         project_dir=args.project_dir,
         check_external=args.check_external,
     )
+
+    if args.auto_fix:
+        fix_report = auto_fix_internal(
+            project_dir=args.project_dir or PROJECT_DIR,
+            link_report=report,
+        )
+        log.info(f"  自动修复: {fix_report['total_fixed']} 处")
 
     out_path = os.path.join(OUTPUT_DIR, "link-check-report.json")
     save_json(out_path, report)
@@ -545,6 +554,184 @@ def run():
     log.info(f"  健康分: {report['health_score']}")
 
     return report
+
+
+# ═══════════════════════════════════════════════════════
+# 自动修复断链
+# ═══════════════════════════════════════════════════════
+
+def auto_fix_internal(project_dir: str = None, link_report: dict = None,
+                      dry_run: bool = False) -> dict:
+    """
+    自动修复内部断链。
+
+    修复策略:
+      1. 文件名匹配修复: 目标文件不存在但可模糊匹配到类似文件名
+         例如: 05-ClawHub平台.md → 05-ClawHub 平台与技能分发.md
+      2. 锚点修复: 标题变更导致锚点失效，尝试模糊匹配现有锚点
+      3. 相对路径修复: ../xx.md → xx.md  (路径错误)
+
+    不修复:
+      - 外部 URL (需要人工确认替换)
+      - 无法模糊匹配的文件 (可能是被删除的内容)
+
+    Args:
+        project_dir: 项目目录
+        link_report: 断链检测报告 (来自 check_all)
+        dry_run: 是否只预览
+
+    Returns:
+        dict: 修复报告
+    """
+    project_dir = project_dir or PROJECT_DIR
+    broken_list = (link_report or {}).get("broken_summary", [])
+
+    if not broken_list:
+        log.info("  无断链需要修复")
+        return {"total_fixed": 0, "files_modified": 0}
+
+    # 构建现有文件索引 (用于模糊匹配)
+    existing_md = {}
+    for f in os.listdir(project_dir):
+        if f.endswith(".md") and not f.endswith(".bak"):
+            existing_md[f.lower()] = f
+            # 也索引不带扩展名的版本
+            base = os.path.splitext(f)[0]
+            existing_md[base.lower()] = f
+
+    # 构建章节号→文件名映射
+    chapter_map = {}
+    for f in existing_md.values():
+        m = re.match(r"(\d+)", f)
+        if m:
+            chapter_map[int(m.group(1))] = f
+
+    # 按文件分组断链
+    from collections import defaultdict
+    fixes_by_file = defaultdict(list)
+    total_fixable = 0
+
+    for broken in broken_list:
+        if broken.get("type") not in ("internal", "image_internal"):
+            continue
+        if broken.get("status") not in ("broken", "broken_anchor"):
+            continue
+
+        target = broken.get("target", "")
+        fix_target = _find_fix_for_link(target, project_dir, existing_md, chapter_map)
+
+        if fix_target and fix_target != target:
+            fixes_by_file[broken["file"]].append({
+                "old_target": target,
+                "new_target": fix_target,
+                "raw": broken.get("raw", ""),
+                "line": broken.get("line", 0),
+                "status": broken.get("status", ""),
+            })
+            total_fixable += 1
+
+    log.info(f"  可自动修复: {total_fixable} 个断链")
+
+    total_fixed = 0
+    files_modified = 0
+    fix_details = []
+
+    for fname, file_fixes in sorted(fixes_by_file.items()):
+        filepath = os.path.join(project_dir, fname)
+        if not os.path.exists(filepath):
+            continue
+
+        with open(filepath, encoding="utf-8") as f:
+            text = f.read()
+
+        original = text
+        file_fixed = 0
+
+        for fix in file_fixes:
+            old = f"]({fix['old_target']})"
+            new = f"]({fix['new_target']})"
+            if old in text:
+                text = text.replace(old, new, 1)
+                file_fixed += 1
+
+        if text != original:
+            if not dry_run:
+                with open(filepath, "w", encoding="utf-8") as f:
+                    f.write(text)
+            files_modified += 1
+            total_fixed += file_fixed
+            fix_details.append({
+                "file": fname,
+                "fixes": file_fixed,
+                "dry_run": dry_run,
+                "repairs": [
+                    {"old": fx["old_target"], "new": fx["new_target"]}
+                    for fx in file_fixes
+                ],
+            })
+            action = "[DRY_RUN] " if dry_run else ""
+            log.info(f"  {action}修复 {fname}: {file_fixed} 个链接")
+
+    return {
+        "total_fixed": total_fixed,
+        "files_modified": files_modified,
+        "total_broken": len(broken_list),
+        "dry_run": dry_run,
+        "details": fix_details,
+    }
+
+
+def _find_fix_for_link(target: str, project_dir: str,
+                       existing_md: dict, chapter_map: dict) -> str | None:
+    """
+    尝试为断链找到正确的目标。
+
+    匹配策略 (按优先级):
+      1. 精确匹配 (去掉路径前缀)
+      2. 章节号匹配 (从链接中提取章节号)
+      3. 模糊文件名匹配 (去空格、去标点后比较)
+    """
+    if not target:
+        return None
+
+    # 分离文件和锚点
+    if "#" in target:
+        file_part, anchor = target.split("#", 1)
+    else:
+        file_part = target
+        anchor = None
+
+    file_part = unquote(file_part).strip()
+    if not file_part:
+        return None  # 纯锚点链接不在此处理
+
+    # 已存在则无需修复
+    full_path = os.path.join(project_dir, file_part)
+    if os.path.exists(full_path):
+        return None
+
+    # 策略1: 去掉路径前缀 (../xxx.md → xxx.md)
+    basename = os.path.basename(file_part)
+    if basename.lower() in existing_md:
+        fix = existing_md[basename.lower()]
+        return fix + (f"#{anchor}" if anchor else "")
+
+    # 策略2: 章节号匹配
+    ch_match = re.match(r"(\d+)", basename)
+    if ch_match:
+        ch_num = int(ch_match.group(1))
+        if ch_num in chapter_map:
+            fix = chapter_map[ch_num]
+            return fix + (f"#{anchor}" if anchor else "")
+
+    # 策略3: 模糊匹配 (标准化后比较)
+    normalized_target = re.sub(r'[\s_\-]', '', basename.lower()).replace('.md', '')
+    for key, real_name in existing_md.items():
+        normalized_key = re.sub(r'[\s_\-]', '', key.lower()).replace('.md', '')
+        if normalized_target and normalized_key and normalized_target == normalized_key:
+            return real_name + (f"#{anchor}" if anchor else "")
+
+    return None
 
 
 if __name__ == "__main__":

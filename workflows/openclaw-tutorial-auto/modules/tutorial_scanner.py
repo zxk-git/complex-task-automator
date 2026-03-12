@@ -54,20 +54,33 @@ def scan_chapter(filepath: str) -> ChapterScanResult:
     match = _RE_CHAPTER_NUM.match(fname)
     chapter_num = int(match.group(1)) if match else 0
 
-    # 提取 H1 标题
+    # 提取 H1 标题 (跳过代码块)
     h1_title = ""
+    _in_cb = False
     for line in lines:
+        if line.strip().startswith("```"):
+            _in_cb = not _in_cb
+            continue
+        if _in_cb:
+            continue
         if line.startswith("# ") and not line.startswith("## "):
             h1_title = line.lstrip("# ").strip()
             break
 
-    # ── 标题结构分析 ──
+    # ── 标题结构分析 (跳过代码块) ──
     headings = {"h1": 0, "h2": 0, "h3": 0, "h4": 0, "h5": 0, "h6": 0}
     heading_lines = []
     heading_jumps = []
     prev_level = 0
+    in_code_block = False
 
     for i, line in enumerate(lines, 1):
+        stripped = line.strip()
+        if stripped.startswith("```"):
+            in_code_block = not in_code_block
+            continue
+        if in_code_block:
+            continue
         m = _RE_HEADING.match(line)
         if m:
             level = len(m.group(1))
@@ -100,8 +113,15 @@ def scan_chapter(filepath: str) -> ChapterScanResult:
     # ── 缺陷检测 ──
     defects = []
 
-    # 占位符
+    # 占位符 (跳过代码块)
+    _in_cb2 = False
     for i, line in enumerate(lines, 1):
+        stripped = line.strip()
+        if stripped.startswith("```"):
+            _in_cb2 = not _in_cb2
+            continue
+        if _in_cb2:
+            continue
         if _RE_PLACEHOLDER.search(line):
             defects.append({"type": "placeholder", "line": i, "text": line.strip()[:80]})
 
@@ -188,10 +208,21 @@ def scan_chapter(filepath: str) -> ChapterScanResult:
 
 
 def _extract_h2_sections(lines: list) -> list:
-    """提取所有 H2 段落及其内容。"""
+    """提取所有 H2 段落及其内容 (跳过代码块)。"""
     sections = []
     current = None
+    in_code_block = False
     for i, line in enumerate(lines, 1):
+        stripped = line.strip()
+        if stripped.startswith("```"):
+            in_code_block = not in_code_block
+            if current:
+                current["_lines"].append(line)
+            continue
+        if in_code_block:
+            if current:
+                current["_lines"].append(line)
+            continue
         if re.match(r"^##\s+(?!#)", line):
             if current:
                 current["content"] = "\n".join(current["_lines"])

@@ -1,17 +1,29 @@
 # =========================================================
-#  OpenClaw Tutorial & Code Auto — 统一优化工作流 v5.0
+#  OpenClaw Tutorial & Code Auto — 统一优化工作流 v5.2
 # =========================================================
 #  双模式流水线:
-#    教程: scan → analyze → collect_refs → check_links →
-#          check_consistency → check_readability → refine →
-#          format → track → git → report
+#    教程: discover → scan → analyze → collect_refs → check_links →
+#          check_consistency → check_readability → fix_issues → refine →
+#          format → track → update_readme → git → report
 #    代码: scan → analyze → enrich → refine → report
+#
+#  v5.2 新增:
+#    - fix_issues 阶段: 自动修复断链和术语不一致
+#    - 代码块感知: scanner/formatter 不再误计 bash 注释为标题
+#    - 评分权重优化: 未标记代码块惩罚 -2→-0.5 (上限 -10)
+#    - 检查阶段结果数据流入修复阶段 (check→fix→refine)
+#
+#  v5.1 新增:
+#    - discover 阶段: 递归扫描教程目录，确保不遗漏文档
+#    - update_readme 阶段: 所有文档优化后自动更新 README
+#    - 完整性验证: discover 与 scan 交叉校验
+#    - refine 阶段默认处理所有文档 (不限制 max_chapters)
 #
 #  特性:
 #    - 模块化架构: prompts/ modules/ templates/ utils/
 #    - 统一入口: auto_optimizer.py (自动检测 tutorial/code)
-#    - 教程 11 阶段 + 代码 5 阶段
-#    - 六维度质量检测 + 自动修复
+#    - 教程 14 阶段 + 代码 5 阶段
+#    - 六维度质量检测 + 自动修复 (断链/术语/URL)
 #    - Python AST 深度代码分析
 #    - 代码自动修复 (docstring/imports/whitespace)
 #    - Git 自动提交推送
@@ -21,8 +33,8 @@
 # =========================================================
 
 name: openclaw-auto-optimizer
-version: "5.0"
-description: "统一自动优化流水线 v5.0: 教程+代码双模式, 8语言支持, 引用增强"
+version: "5.2"
+description: "统一自动优化流水线 v5.2: 目录发现+自动修复+教程14阶段+代码双模式+README自动更新"
 
 variables:
   PROJECT_DIR: /root/.openclaw/workspace/zxk-private/openclaw-tutorial-auto

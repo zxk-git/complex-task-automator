@@ -41,25 +41,47 @@ TERMINOLOGY_RULES = {
         r"\bclaw[\s_-]?hub\b",          # claw hub, claw-hub
         r"\bClaw[\s_-]Hub\b",           # Claw Hub, Claw-Hub
         r"\bCLAWHUB\b",                 # CLAWHUB
+        r"\bClawdHub\b",                # ClawdHub (拼写错误)
     ],
     "config.yaml": [
         r"\bconfig\.yml\b",             # 应该统一用 .yaml
+    ],
+    "openclaw.json": [
+        r"\bopenclaw\.yml\b",
+        r"\bopenclaw\.yaml\b",
+    ],
+    "SKILL.md": [
+        r"\bskill\.md\b",              # 大小写不一致
+        r"\bSkill\.md\b",
+    ],
+    "_meta.json": [
+        r"\bmeta\.json\b",             # 缺少下划线前缀
     ],
 }
 
 # URL 标准化规则 (canonical → variants)
 URL_CANONICAL = {
-    "https://github.com/anthropics/openclaw": [
-        "https://github.com/openclaw/openclaw",
+    "https://github.com/openclaw/openclaw": [
+        "https://github.com/anthropics/openclaw",
         "https://github.com/openClaw/openclaw",
     ],
-    "https://docs.openclaw.com": [
+    "https://docs.openclaw.ai": [
+        "https://docs.openclaw.com",
         "https://doc.openclaw.com",
-        "http://docs.openclaw.com",    # http vs https
+        "https://doc.openclaw.ai",
+        "http://docs.openclaw.com",
+        "http://docs.openclaw.ai",
     ],
-    "https://hub.openclaw.com": [
+    "https://hub.openclaw.ai": [
+        "https://hub.openclaw.com",
         "https://clawhub.com",
         "http://hub.openclaw.com",
+        "http://hub.openclaw.ai",
+    ],
+    "https://openclaw.ai": [
+        "https://openclaw.com",
+        "http://openclaw.ai",
+        "http://openclaw.com",
     ],
 }
 
@@ -309,12 +331,33 @@ def _check_command_consistency(chapters_data: list) -> list:
                 "line": cmd_info["line"],
             })
 
-    # 检查同一基础命令的不同写法
+    # 检查同一基础命令的不同参数写法
+    # 比如 openclaw skill install xxx vs openclaw skill add xxx
+    KNOWN_CMD_ALIASES = {
+        "openclaw skill": {"install", "add"},
+        "openclaw config": {"set", "edit"},
+    }
     for base, usages in cmd_groups.items():
-        full_cmds = set(u["full_cmd"] for u in usages)
-        # 如果同一基础命令有多种写法，可能是不一致
-        # 但也可能是故意的 (不同参数)，这里只标记可参考
-        # 暂不生成 issue，留作信息
+        if base in KNOWN_CMD_ALIASES:
+            seen_variants = set()
+            for u in usages:
+                parts = u["full_cmd"].split()
+                if len(parts) >= 3 and parts[2] in KNOWN_CMD_ALIASES[base]:
+                    seen_variants.add(parts[2])
+            if len(seen_variants) > 1:
+                for u in usages:
+                    parts = u["full_cmd"].split()
+                    if len(parts) >= 3 and parts[2] in KNOWN_CMD_ALIASES[base]:
+                        issues.append({
+                            "type": "command_inconsistency",
+                            "severity": "minor",
+                            "file": u["file"],
+                            "chapter": u["chapter"],
+                            "line": u["line"],
+                            "expected": f"{base} (统一写法)",
+                            "actual": u["full_cmd"],
+                            "message": f"命令写法不一致: '{base}' 存在 {seen_variants} 多种变体",
+                        })
 
     return issues
 
@@ -462,14 +505,148 @@ def check_all(project_dir: str = None, scan_report: dict = None) -> dict:
         "issues_by_chapter": dict(chapter_issue_counts),
         "issues": all_issues,
         "consistency_score": round(
-            max(0, 100 - severity_counts.get("critical", 0) * 10
+            max(0, min(100, 100 - severity_counts.get("critical", 0) * 10
                       - severity_counts.get("major", 0) * 3
-                      - severity_counts.get("minor", 0) * 0.5),
+                      - severity_counts.get("minor", 0) * 0.5)),
             1
         ),
     }
 
     return report
+
+
+# ═══════════════════════════════════════════════════════
+# 自动修复
+# ═══════════════════════════════════════════════════════
+
+def auto_fix(project_dir: str = None, consistency_report: dict = None,
+             dry_run: bool = False) -> dict:
+    """
+    根据一致性检测报告自动修复术语和 URL 不一致问题。
+
+    支持修复的类型:
+      - terminology: 术语变体→标准写法
+      - url_inconsistency: URL 变体→canonical URL
+      - url_scheme: http→https
+
+    不修复的类型 (需要人工判断):
+      - content_duplication: 重复内容去重
+      - broken_cross_ref: 交叉引用修复
+      - command_inconsistency: 命令写法统一
+
+    Args:
+        project_dir: 项目目录
+        consistency_report: 一致性检测报告 (来自 check_all)
+        dry_run: 是否只预览不实际写入
+
+    Returns:
+        dict: 修复报告
+    """
+    project_dir = project_dir or PROJECT_DIR
+    issues = (consistency_report or {}).get("issues", [])
+
+    if not issues:
+        log.info("  无一致性问题需要修复")
+        return {"fixed": 0, "skipped": 0, "files_modified": 0}
+
+    # 按文件分组可修复的问题
+    fixable_types = {"terminology", "url_inconsistency", "url_scheme"}
+    fixes_by_file = defaultdict(list)
+    skipped = 0
+
+    for issue in issues:
+        if issue.get("type") in fixable_types:
+            fixes_by_file[issue["file"]].append(issue)
+        else:
+            skipped += 1
+
+    log.info(f"  可自动修复: {sum(len(v) for v in fixes_by_file.values())} 个问题")
+    log.info(f"  需人工处理: {skipped} 个问题")
+
+    total_fixed = 0
+    files_modified = 0
+    fix_details = []
+
+    for fname, file_issues in sorted(fixes_by_file.items()):
+        filepath = os.path.join(project_dir, fname)
+        if not os.path.exists(filepath):
+            continue
+
+        with open(filepath, encoding="utf-8") as f:
+            text = f.read()
+
+        original = text
+        file_fixed = 0
+
+        # 对该文件的所有修复按行号倒序排列 (从后往前替换，避免位移)
+        for issue in file_issues:
+            old_val = issue.get("actual", "")
+            new_val = issue.get("expected", "")
+            if not old_val or not new_val or old_val == new_val:
+                continue
+
+            issue_type = issue["type"]
+            if issue_type == "terminology":
+                # 术语替换：需要精准匹配（不在代码块内）
+                # 用正则进行单次替换（仅替换代码块外的）
+                replaced = _replace_outside_code_blocks(text, old_val, new_val)
+                if replaced != text:
+                    text = replaced
+                    file_fixed += 1
+
+            elif issue_type in ("url_inconsistency", "url_scheme"):
+                # URL 替换：精确字符串替换
+                if old_val in text:
+                    text = text.replace(old_val, new_val)
+                    file_fixed += 1
+
+        if text != original:
+            if not dry_run:
+                with open(filepath, "w", encoding="utf-8") as f:
+                    f.write(text)
+            files_modified += 1
+            total_fixed += file_fixed
+            fix_details.append({
+                "file": fname,
+                "fixes": file_fixed,
+                "dry_run": dry_run,
+            })
+            log.info(f"  {'[DRY_RUN] ' if dry_run else ''}修复 {fname}: {file_fixed} 处")
+
+    report = {
+        "total_fixed": total_fixed,
+        "files_modified": files_modified,
+        "skipped": skipped,
+        "dry_run": dry_run,
+        "details": fix_details,
+    }
+    return report
+
+
+def _replace_outside_code_blocks(text: str, old: str, new: str) -> str:
+    """在代码块外替换文本（保护代码块内容不被修改）。"""
+    lines = text.split("\n")
+    result = []
+    in_code = False
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("```"):
+            in_code = not in_code
+            result.append(line)
+            continue
+        if in_code:
+            result.append(line)
+            continue
+        # 也保护行内代码 `...`
+        parts = re.split(r'(`[^`]+`)', line)
+        new_parts = []
+        for part in parts:
+            if part.startswith('`') and part.endswith('`'):
+                new_parts.append(part)  # 行内代码不替换
+            else:
+                new_parts.append(part.replace(old, new))
+        result.append("".join(new_parts))
+    return "\n".join(result)
 
 
 def run():

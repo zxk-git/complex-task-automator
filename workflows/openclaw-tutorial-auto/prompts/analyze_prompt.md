@@ -93,6 +93,32 @@
 
 ## 优先级规则
 
-- **high**：score < 70 或缺少 3+ 必须段落
-- **medium**：score 70-85 或缺少 1-2 必须段落
+- **high**：score < 75 或缺少 3+ 必须段落
+- **medium**：score 75-85 或缺少 1-2 必须段落
 - **low**：score > 85，仅需微调
+
+## 可用改进类型
+
+分析阶段可输出的 `type` 值（需要人工/AI 判断的改进）：
+
+| type | 说明 |
+|------|------|
+| `add_section` | 补充缺失段落（FAQ、小结、参考等） |
+| `fix_structure` | 修复标题层级跳跃 |
+| `enrich_content` | 扩展薄弱内容 |
+| `add_example` | 添加代码示例/操作步骤 |
+| `fix_links` | 修复已知断链 |
+| `update_version` | 更新过时的版本号 |
+| `add_troubleshooting` | 添加故障排查段落 |
+
+以下操作由 refiner 自动执行，**不需要**在改进计划中输出：
+- `fix_code_closings` — 自动修复代码块关闭
+- `clean_artifacts` — 自动清洗爬虫残留
+- `deduplicate_sections` — 自动去重
+- `convert_alerts` — GitHub Alert 语法自动转换
+- `add_toc` — 自动添加目录
+- `add_nav` — 自动添加导航
+- `add_badges` — 自动添加徽章
+- `add_code_labels` — 自动添加代码语言标注
+- `fix_cjk_spacing` — 自动中英文间距
+- `fix_dense_blocks` — 自动修复密排

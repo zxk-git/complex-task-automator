@@ -77,6 +77,7 @@ def fix_broken_code_closings(text: str) -> tuple:
     """修复代码块关闭标记被错误追加语言标签的 BUG。
 
     例如 ```bash ... ```text 应为 ```bash ... ```
+    也处理引用块内的代码块 (> ```text → > ```)
     """
     lines = text.split("\n")
     new_lines = []
@@ -84,7 +85,15 @@ def fix_broken_code_closings(text: str) -> tuple:
     changes = []
 
     for i, line in enumerate(lines):
-        stripped = line.strip()
+        # 提取前缀 (支持 "> " 引用块前缀)
+        prefix = ""
+        content = line
+        bq_match = re.match(r'^(>\s*)', line)
+        if bq_match:
+            prefix = bq_match.group(1)
+            content = line[len(prefix):]
+
+        stripped = content.strip()
         if stripped.startswith("```"):
             lang_part = stripped[3:].strip()
             if not in_code:
@@ -92,7 +101,7 @@ def fix_broken_code_closings(text: str) -> tuple:
                 new_lines.append(line)
             elif lang_part:
                 # 关闭时不应带语言标签 → 修复为纯关闭
-                new_lines.append("```")
+                new_lines.append(prefix + "```")
                 changes.append(f"L{i+1}: fixed ```{lang_part} → ```")
                 in_code = False
             else:
@@ -103,7 +112,7 @@ def fix_broken_code_closings(text: str) -> tuple:
 
     if changes:
         return "\n".join(new_lines), changes
-    return text, None
+    return text, []
 
 
 # ── P1: 爬虫残留清洗 ──
@@ -119,16 +128,29 @@ def clean_raw_scrape_artifacts(text: str) -> tuple:
         text = re.sub(pattern, "", text, flags=re.DOTALL)
         changes.append(f"removed {len(matches)} raw scrape artifact blocks")
 
-    # 去重 "## 最新动态与补充" 段落 (保留最后一个)
-    update_pattern = r"\n## 最新动态与补充\n\n> 📅 更新时间: \d{4}-\d{2}-\d{2}\n?"
-    update_blocks = list(re.finditer(update_pattern, text))
-    if len(update_blocks) > 1:
-        # 从后往前删除，保留最后一个
-        for m in reversed(update_blocks[:-1]):
-            text = text[:m.start()] + text[m.end():]
-        changes.append(f"deduplicated {len(update_blocks)-1} '最新动态' blocks")
+    # 移除引用块内的 "### 补充 N" (> ### 补充 1)
+    bq_pattern = r"\n(?:>\s*)?### 补充 \d+\n(?:>.*\n)*"
+    bq_matches = re.findall(bq_pattern, text)
+    if bq_matches:
+        text = re.sub(bq_pattern, "\n", text)
+        changes.append(f"removed {len(bq_matches)} blockquoted scrape artifacts")
 
-    return (text, changes) if changes else (text, None)
+    # 移除裸 URL 搜索结果格式 (- **标题** (relevance: N%))
+    relevance_pattern = r"\n-\s*\*\*[^*]+\*\*\s*\(relevance:\s*\d+%\).*\n?"
+    rel_matches = re.findall(relevance_pattern, text)
+    if rel_matches:
+        text = re.sub(relevance_pattern, "\n", text)
+        changes.append(f"removed {len(rel_matches)} relevance-tagged search results")
+
+    # 去重 "## 最新动态与补充" 段落 (全部删除 — 这些是爬虫产物)
+    update_pattern = r"\n## 最新动态与补充\n.*?(?=\n## |\Z)"
+    update_blocks = list(re.finditer(update_pattern, text, re.DOTALL))
+    if update_blocks:
+        for m in reversed(update_blocks):
+            text = text[:m.start()] + text[m.end():]
+        changes.append(f"removed {len(update_blocks)} '最新动态与补充' blocks")
+
+    return (text, changes) if changes else (text, [])
 
 
 # ── P1: GitHub Alert 语法统一 ──
@@ -156,7 +178,7 @@ def convert_to_github_alerts(text: str) -> tuple:
             count = len(re.findall(pat, text))
             text = re.sub(pat, repl, text)
             changes.append(f"converted {count} alerts: {pat[:30]}")
-    return (text, changes) if changes else (text, None)
+    return (text, changes) if changes else (text, [])
 
 
 # ── P2: 章节头部视觉增强 ──
@@ -179,13 +201,11 @@ def _get_difficulty(readability_score: int) -> tuple:
 
 def enhance_chapter_header(text: str, chapter_num: int, chapter_title: str,
                            word_cnt: int = 0, readability_score: int = 50) -> tuple:
-    """在 H1 标题下方添加 shields.io 徽章和章节概要框。"""
-    # 已有徽章则跳过
-    if "img.shields.io/badge" in text:
-        return text, None
-
+    """在 H1 标题下方添加 shields.io 徽章和章节概要框。
+    若已有徽章，则更新难度等级以保持一致性。同时同步正文元数据行。"""
     stars, label, color = _get_difficulty(readability_score)
     minutes = max(5, word_cnt // 250) if word_cnt else 20
+    changes = []
 
     badge_line = (
         f"![difficulty](https://img.shields.io/badge/难度-{stars}_{label}-{color})"
@@ -193,13 +213,34 @@ def enhance_chapter_header(text: str, chapter_num: int, chapter_title: str,
         f" ![chapter](https://img.shields.io/badge/章节-{chapter_num:02d}%2F21-purple)"
     )
 
-    # 在 H1 后一行插入徽章行
-    h1_match = re.search(r"^(#\s+.+)$", text, re.MULTILINE)
-    if h1_match:
-        end = h1_match.end()
-        text = text[:end] + "\n\n" + badge_line + "\n" + text[end:]
-        return text, ["added chapter badges (difficulty, reading time)"]
-    return text, None
+    # 更新已有徽章
+    badge_pattern = r'!\[difficulty\]\(https://img\.shields\.io/badge/难度-[^)]*\)' \
+                    r'\s*!\[time\]\(https://img\.shields\.io/badge/阅读时间-[^)]*\)' \
+                    r'\s*!\[chapter\]\(https://img\.shields\.io/badge/章节-[^)]*\)'
+    if re.search(badge_pattern, text):
+        old = re.search(badge_pattern, text).group()
+        if old != badge_line:
+            text = re.sub(badge_pattern, badge_line, text)
+            changes.append(f"updated chapter badges (difficulty={stars} {label})")
+    elif "img.shields.io/badge" not in text:
+        # 无徽章 → 在 H1 后插入
+        h1_match = re.search(r"^(#\s+.+)$", text, re.MULTILINE)
+        if h1_match:
+            end = h1_match.end()
+            text = text[:end] + "\n\n" + badge_line + "\n" + text[end:]
+            changes.append("added chapter badges (difficulty, reading time)")
+
+    # 同步正文元数据行
+    meta_pattern = r'>\s*\*\*难度\*\*:\s*⭐[⭐]*\s*\S+'
+    meta_replacement = f'> **难度**: {stars} {label}'
+    meta_match = re.search(meta_pattern, text)
+    if meta_match:
+        old_meta = meta_match.group()
+        if stars not in old_meta or label not in old_meta:
+            text = re.sub(meta_pattern, meta_replacement, text)
+            changes.append(f"synced text difficulty to {stars} {label}")
+
+    return (text, changes) if changes else (text, [])
 
 
 def _build_header_nav(info: dict) -> str:
@@ -244,7 +285,7 @@ def add_chapter_navigation(text: str, chapter_num: int, nav_info: dict) -> tuple
     """添加章首和章尾导航（居中 HTML 格式）。返回 (修改后文本, 变更描述)。"""
     info = nav_info.get(chapter_num)
     if not info:
-        return text, None
+        return text, []
 
     changes = []
 
@@ -260,18 +301,19 @@ def add_chapter_navigation(text: str, chapter_num: int, nav_info: dict) -> tuple
         text = text.rstrip() + "\n\n" + footer + "\n"
         changes.append("added footer navigation")
 
-    return text, changes if changes else None
+    return text, changes if changes else []
 
 
 def add_toc(text: str) -> tuple:
     """在 H1 标题后添加本章目录。返回 (修改后文本, 变更描述)。"""
-    if re.search(r"##\s+.*(?:📑?\s*本章目录|目录)", text):
-        return text, None
+    # 检测已有 TOC（包含所有变体）
+    if re.search(r"##\s+.*(?:📑?\s*本章目录|📖?\s*目录|Table of Contents)", text):
+        return text, []
 
     # 提取 H2 标题
     h2s = re.findall(r"^##\s+(.+)$", text, re.MULTILINE)
     if not h2s:
-        return text, None
+        return text, []
 
     toc_lines = ["## 📑 本章目录", ""]
     for title in h2s:
@@ -295,7 +337,7 @@ def add_toc(text: str) -> tuple:
         text = text[:insert_pos] + "\n\n" + toc_block + "\n" + text[insert_pos:]
         return text, ["added table of contents"]
 
-    return text, None
+    return text, []
 
 
 def fix_heading_jumps(text: str) -> tuple:
@@ -328,7 +370,7 @@ def fix_heading_jumps(text: str) -> tuple:
 
     if changes:
         return "\n".join(new_lines), changes
-    return text, None
+    return text, []
 
 
 def add_code_language_labels(text: str) -> tuple:
@@ -360,7 +402,7 @@ def add_code_language_labels(text: str) -> tuple:
 
     if changes:
         return text, changes
-    return text, None
+    return text, []
 
 
 def add_references_section(text: str, chapter_num: int,
@@ -376,8 +418,8 @@ def add_references_section(text: str, chapter_num: int,
         chapter_num: 章节编号
         collected_refs: reference_collector 的输出 (per-chapter dict)
     """
-    if re.search(r"##\s+.*(?:参考来源|References)", text, re.IGNORECASE):
-        return text, None
+    if re.search(r"##\s+.*(?:参考来源|参考链接|参考资料|References|延伸阅读)", text, re.IGNORECASE):
+        return text, []
 
     # 优先使用 collected_refs 中的 Markdown 块
     if collected_refs and collected_refs.get("recommended_references_block"):
@@ -437,7 +479,7 @@ def add_references_section(text: str, chapter_num: int,
 def add_faq_section(text: str, chapter_title: str) -> tuple:
     """添加 FAQ 段落（如不存在）。根据章节内容生成定制化 FAQ。"""
     if re.search(r"##\s+.*(?:常见问题|FAQ)", text, re.IGNORECASE):
-        return text, None
+        return text, []
 
     # 从章节内容中提取 H2 标题，生成有针对性的 FAQ
     h2s = re.findall(r"^##\s+(.+)$", text, re.MULTILINE)
@@ -500,7 +542,7 @@ def add_faq_section(text: str, chapter_title: str) -> tuple:
 def add_summary_section(text: str, chapter_title: str) -> tuple:
     """添加本章小结（如不存在）。从章节内容提取要点生成有针对性的小结。"""
     if re.search(r"##\s+.*(?:本章小结|Summary)", text, re.IGNORECASE):
-        return text, None
+        return text, []
 
     # 提取 H2 标题作为要点
     h2s = re.findall(r"^##\s+(.+)$", text, re.MULTILINE)
@@ -591,7 +633,7 @@ def fix_cjk_spacing(text: str) -> tuple:
     result = "\n".join(new_lines)
     if changes_count > 0:
         return result, [f"fixed CJK-Latin spacing in {changes_count} lines"]
-    return text, None
+    return text, []
 
 
 def fix_dense_blocks(text: str) -> tuple:
@@ -615,7 +657,38 @@ def fix_dense_blocks(text: str) -> tuple:
 
     if changes > 0:
         return "\n".join(new_lines), [f"inserted {changes} blank lines in dense blocks"]
-    return text, None
+    return text, []
+
+
+def deduplicate_sections(text: str) -> tuple:
+    """去除重复的 TOC 和参考来源段落。
+
+    - 保留 '📑 本章目录'，删除单独的 '📖 目录' 段落
+    - 保留第一个参考来源段落，删除后续重复的
+    """
+    changes = []
+
+    # 去重 TOC – 保留 '📑 本章目录'，删除其他冗余目录段
+    if '## 📑 本章目录' in text:
+        for dup_label in ['📖 目录', '📑 目录']:
+            dup_heading = f'## {dup_label}'
+            if dup_heading in text:
+                pattern = r'\n' + re.escape(dup_heading) + r'\n.*?(?=\n## )'
+                if re.search(pattern, text, re.DOTALL):
+                    text = re.sub(pattern, '', text, flags=re.DOTALL)
+                    changes.append(f"removed duplicate '{dup_label}' section")
+
+    # 去重参考来源
+    ref_sections = list(re.finditer(r'\n## (?:参考来源|参考链接|参考资料)\b', text))
+    if len(ref_sections) > 1:
+        for m in reversed(ref_sections[1:]):
+            remaining = text[m.end():]
+            next_h2 = re.search(r'\n## ', remaining)
+            sec_end = m.end() + next_h2.start() if next_h2 else len(text)
+            text = text[:m.start()] + text[sec_end:]
+        changes.append(f"removed {len(ref_sections)-1} duplicate reference sections")
+
+    return (text, changes) if changes else (text, [])
 
 
 # ── 核心精炼逻辑 ────────────────────────────────────
@@ -662,6 +735,11 @@ def refine_chapter(chapter_analysis: ChapterAnalysis, nav_info: dict,
     if changes:
         all_changes.extend(changes)
 
+    # 0c. [P1] 去除重复的目录/参考章节
+    text, changes = deduplicate_sections(text)
+    if changes:
+        all_changes.extend(changes)
+
     # 1. 修复标题层级
     text, changes = fix_heading_jumps(text)
     if changes:
@@ -673,8 +751,16 @@ def refine_chapter(chapter_analysis: ChapterAnalysis, nav_info: dict,
         all_changes.extend(changes)
 
     # 2b. [P2] 章节头部视觉增强（徽章）
+    # 基于章节编号估算难度分数，避免使用固定默认值 50
+    _ch_difficulty_score = (
+        20 if ch_num <= 5 else
+        50 if ch_num <= 10 else
+        70 if ch_num <= 15 else
+        85
+    )
     text, changes = enhance_chapter_header(text, ch_num, ch_title,
-                                           word_count(text))
+                                           word_count(text),
+                                           readability_score=_ch_difficulty_score)
     if changes:
         all_changes.extend(changes)
 

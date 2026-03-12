@@ -34,8 +34,8 @@ from modules.quality_analyzer import analyze_all
 from modules.tutorial_refiner import refine_all
 from modules.reference_collector import collect_all as collect_references
 from modules.formatter import format_all
-from modules.link_checker import check_all as check_links
-from modules.consistency_checker import check_all as check_consistency
+from modules.link_checker import check_all as check_links, auto_fix_internal as fix_broken_links
+from modules.consistency_checker import check_all as check_consistency, auto_fix as fix_consistency
 from modules.readability_analyzer import analyze_all as analyze_readability
 from modules.optimization_tracker import record_batch, analyze_trends
 from modules.compat import setup_logger, cfg, save_json
@@ -53,17 +53,18 @@ class Pipeline(BasePipeline):
     """教程优化流水线。"""
 
     STAGES = [
-        "scan", "analyze", "collect_refs",
+        "discover", "scan", "analyze", "collect_refs",
         "check_links", "check_consistency", "check_readability",
-        "refine", "format", "track", "git", "report",
+        "fix_issues",
+        "refine", "format", "track", "update_readme", "git", "report",
     ]
-    CRITICAL_STAGES = ("scan", "analyze")
+    CRITICAL_STAGES = ("discover", "scan", "analyze")
     PIPELINE_NAME = "教程自动优化流水线"
-    PIPELINE_VERSION = "5.0"
+    PIPELINE_VERSION = "5.2"
     PIPELINE_ICON = "📚"
 
     def __init__(self, max_chapters=None, dry_run=False, stages=None,
-                 web_search=False, check_external=False):
+                 web_search=True, check_external=False):
         super().__init__(dry_run=dry_run, stages=stages)
         self.max_chapters = max_chapters
         self.web_search = web_search
@@ -81,9 +82,121 @@ class Pipeline(BasePipeline):
     def report_filename(self) -> str:
         return "pipeline-result.json"
 
+    # ──────────────────────────────────────────────────────────
+    #  阶段 0: 发现 — 递归扫描教程目录，建立完整文档清单
+    # ──────────────────────────────────────────────────────────
+    def _stage_discover(self):
+        """阶段 0: 递归扫描教程目录，列出所有教程文档。
+
+        目的:
+          - 在正式优化前建立完整的文档清单
+          - 确保不会遗漏任何教程文档
+          - 为后续阶段提供完整的文件路径列表
+        """
+        import glob
+
+        project_dir = PROJECT_DIR
+        log.info(f"  扫描教程目录: {project_dir}")
+
+        # 收集所有 Markdown 文件 (递归)
+        all_md_files = []
+        tutorial_dirs = [project_dir]
+
+        # 也扫描常见教程子目录
+        for subdir_name in ("docs", "tutorial", "tutorials", "guide", "guides", "chapters"):
+            subdir = os.path.join(project_dir, subdir_name)
+            if os.path.isdir(subdir):
+                tutorial_dirs.append(subdir)
+                log.info(f"  发现子目录: {subdir_name}/")
+
+        for search_dir in tutorial_dirs:
+            for root, dirs, files in os.walk(search_dir):
+                # 跳过隐藏目录和常见非教程目录
+                dirs[:] = [d for d in dirs if not d.startswith(".") and d not in (
+                    "node_modules", "__pycache__", ".git", "assets", "images",
+                    "_archive", ".cache", "drafts",
+                )]
+                for f in sorted(files):
+                    if f.endswith(".md") and not f.endswith(".bak"):
+                        full_path = os.path.join(root, f)
+                        rel_path = os.path.relpath(full_path, project_dir)
+                        all_md_files.append({
+                            "file": f,
+                            "path": full_path,
+                            "rel_path": rel_path,
+                            "dir": os.path.relpath(root, project_dir),
+                            "size_bytes": os.path.getsize(full_path),
+                        })
+
+        # 去重 (walk 可能重复包含根目录文件)
+        seen_paths = set()
+        unique_files = []
+        for entry in all_md_files:
+            if entry["path"] not in seen_paths:
+                seen_paths.add(entry["path"])
+                unique_files.append(entry)
+        all_md_files = unique_files
+
+        # 分类统计
+        import re as _re
+        chapter_files = [f for f in all_md_files if _re.match(r"\d+", f["file"])]
+        root_chapter_files = [f for f in chapter_files if f["dir"] == "."]
+        subdir_chapter_files = [f for f in chapter_files if f["dir"] != "."]
+        other_files = [f for f in all_md_files if not _re.match(r"\d+", f["file"])]
+
+        report = {
+            "discover_time": datetime.now(tz=timezone.utc).isoformat(),
+            "project_dir": project_dir,
+            "total_files": len(all_md_files),
+            "chapter_files": len(root_chapter_files),
+            "subdir_chapter_files": len(subdir_chapter_files),
+            "other_files": len(other_files),
+            "directories_scanned": [os.path.relpath(d, project_dir) for d in tutorial_dirs],
+            "files": all_md_files,
+            "chapter_list": [f["rel_path"] for f in root_chapter_files],
+            "subdir_chapter_list": [f["rel_path"] for f in subdir_chapter_files],
+            "other_list": [f["rel_path"] for f in other_files],
+        }
+
+        save_json(os.path.join(OUTPUT_DIR, "discover-report.json"), report)
+
+        log.info(f"  总文件数: {len(all_md_files)}")
+        log.info(f"  根目录章节: {len(root_chapter_files)}")
+        log.info(f"  子目录章节: {len(subdir_chapter_files)}")
+        log.info(f"  其它文档: {len(other_files)}")
+        log.info(f"  扫描目录: {report['directories_scanned']}")
+
+        # 列出所有发现的文件
+        for f in all_md_files:
+            size_kb = f["size_bytes"] / 1024
+            log.info(f"    📄 {f['rel_path']} ({size_kb:.1f} KB)")
+
+        return report
+
     def _stage_scan(self):
-        """阶段 1: 扫描教程仓库。"""
+        """阶段 1: 扫描教程仓库 (利用 discover 结果确保完整覆盖)。"""
+        # 利用 discover 结果确保扫描完整
+        discover_data = self.results.get("discover", {}).get("data", {})
+        discovered_files = discover_data.get("files", [])
+
+        if discovered_files:
+            log.info(f"  基于 discover 结果扫描 {len(discovered_files)} 个文件")
+
         report = scan_repository(PROJECT_DIR)
+
+        # 交叉验证：检查 discover 发现但 scan 未覆盖的文件
+        if discovered_files:
+            scanned_files = {ch.get("file") for ch in report.get("chapters", [])}
+            discovered_chapter_files = {f["file"] for f in discovered_files
+                                        if f["dir"] == "." and __import__("re").match(r"\d+", f["file"])}
+            missed = discovered_chapter_files - scanned_files
+            if missed:
+                log.warning(f"  ⚠️ discover 发现但 scan 未覆盖的文件: {missed}")
+                report.setdefault("global_issues", []).append(
+                    f"discover 发现 {len(missed)} 个文件未被 scan 覆盖: {sorted(missed)}"
+                )
+            report["discover_total"] = len(discovered_files)
+
         save_json(os.path.join(OUTPUT_DIR, "scan-report.json"), report)
         log.info(f"  章节: {report['summary']['completed']}/{report['expected_chapters']}")
         log.info(f"  平均分: {report['summary']['avg_score']}")
@@ -154,14 +267,91 @@ class Pipeline(BasePipeline):
             log.warning(f"  递进问题: {len(p['issues'])} 个")
         return report
 
+    # ──────────────────────────────────────────────────────────
+    #  阶段 3e: 自动修复检查发现的问题
+    # ──────────────────────────────────────────────────────────
+    def _stage_fix_issues(self):
+        """阶段 3e: 根据检查结果自动修复可修复的问题。
+
+        修复范围:
+          - 术语不一致 (open claw → OpenClaw 等)
+          - URL 不一致 (http→https, 变体→canonical)
+          - 内部断链 (文件名变更导致的链接失效)
+        """
+        consistency_report = self.results.get("check_consistency", {}).get("data")
+        link_report = self.results.get("check_links", {}).get("data")
+
+        total_fixed = 0
+        reports = {}
+
+        # 修复一致性问题
+        if consistency_report and consistency_report.get("total_issues", 0) > 0:
+            log.info(f"  修复一致性问题 ({consistency_report['total_issues']} 个)...")
+            c_fix = fix_consistency(
+                project_dir=PROJECT_DIR,
+                consistency_report=consistency_report,
+                dry_run=self.dry_run,
+            )
+            total_fixed += c_fix.get("total_fixed", 0)
+            reports["consistency_fix"] = c_fix
+            log.info(f"  术语/URL 修复: {c_fix.get('total_fixed', 0)} 处"
+                     f" (跳过: {c_fix.get('skipped', 0)})")
+        else:
+            log.info("  无一致性问题需要修复")
+
+        # 修复内部断链
+        if link_report and link_report.get("total_broken", 0) > 0:
+            log.info(f"  修复内部断链 ({link_report['total_broken']} 个)...")
+            l_fix = fix_broken_links(
+                project_dir=PROJECT_DIR,
+                link_report=link_report,
+                dry_run=self.dry_run,
+            )
+            total_fixed += l_fix.get("total_fixed", 0)
+            reports["link_fix"] = l_fix
+            log.info(f"  链接修复: {l_fix.get('total_fixed', 0)} 处")
+        else:
+            log.info("  无断链需要修复")
+
+        report = {
+            "total_fixed": total_fixed,
+            "dry_run": self.dry_run,
+            **reports,
+        }
+        save_json(os.path.join(OUTPUT_DIR, "fix-issues-report.json"), report)
+        log.info(f"  总自动修复: {total_fixed} 处")
+        return report
+
     def _stage_refine(self):
-        """阶段 4: 内容精炼。"""
+        """阶段 4: 内容精炼 (处理所有教程文档，不遗漏)。"""
         analysis_report = self.results.get("analyze", {}).get("data")
         references_report = self.results.get("collect_refs", {}).get("data")
-        report = refine_all(analysis_report, max_chapters=self.max_chapters,
+
+        # 获取 discover 阶段发现的 *根目录* 章节数，用于日志对比
+        discover_data = self.results.get("discover", {}).get("data", {})
+        discover_total = discover_data.get("chapter_files", 0)  # 仅根目录章节
+
+        # 获取检查阶段结果，传递给 refine 使用
+        consistency_report = self.results.get("check_consistency", {}).get("data")
+        link_report = self.results.get("check_links", {}).get("data")
+
+        # max_chapters=None 确保处理所有文档，除非用户明确指定了限制
+        effective_max = self.max_chapters
+        if effective_max is None and discover_total > 0:
+            log.info(f"  将处理全部 {discover_total} 个根目录章节文档 (无数量限制)")
+        elif effective_max:
+            log.info(f"  用户指定限制: 最多处理 {effective_max} 个章节")
+
+        report = refine_all(analysis_report, max_chapters=effective_max,
                             references_report=references_report)
         save_json(os.path.join(OUTPUT_DIR, "refine-result.json"), report)
-        log.info(f"  精炼: {report.get('refined', 0)}/{report.get('total_processed', 0)}")
+
+        # 验证完整性 (仅与根目录章节数比较)
+        processed = report.get("total_processed", 0)
+        if discover_total > 0 and processed < discover_total and effective_max is None:
+            log.warning(f"  ⚠️ 仅处理 {processed}/{discover_total} 个根目录章节，可能存在遗漏")
+
+        log.info(f"  精炼: {report.get('refined', 0)}/{processed}")
         log.info(f"  总修改: {report.get('total_changes', 0)}")
         return report
 
@@ -173,6 +363,9 @@ class Pipeline(BasePipeline):
         log.info(f"  平均格式分: {report.get('average_format_score', 0)}")
         return report
 
+    # ──────────────────────────────────────────────────────────
+    #  阶段 5c: 追踪优化历史
+    # ──────────────────────────────────────────────────────────
     def _stage_track(self):
         """阶段 5b: 优化历史追踪。"""
         scan_before = self.results.get("scan", {}).get("data")
@@ -211,8 +404,41 @@ class Pipeline(BasePipeline):
             "trends": trends,
         }
 
+    # ──────────────────────────────────────────────────────────
+    #  阶段 6: 自动更新 README
+    # ──────────────────────────────────────────────────────────
+    def _stage_update_readme(self):
+        """阶段 6: 所有教程文档优化完成后，自动更新 README.md。
+
+        在所有教程文档优化完成后执行，确保 README 反映最新的文档结构。
+        包含：项目介绍、教程目录导航、快速开始、示例、教程入口。
+        """
+        from modules.readme_generator import generate_readme
+
+        scan_report = self.results.get("scan", {}).get("data", {})
+        discover_report = self.results.get("discover", {}).get("data", {})
+        refine_report = self.results.get("refine", {}).get("data", {})
+        analysis_report = self.results.get("analyze", {}).get("data", {})
+
+        report = generate_readme(
+            project_dir=PROJECT_DIR,
+            scan_report=scan_report,
+            discover_report=discover_report,
+            refine_report=refine_report,
+            analysis_report=analysis_report,
+            dry_run=self.dry_run,
+        )
+
+        save_json(os.path.join(OUTPUT_DIR, "readme-update-report.json"), report)
+        log.info(f"  README 状态: {report.get('status', '?')}")
+        log.info(f"  章节目录条目: {report.get('toc_entries', 0)}")
+        if report.get("readme_path"):
+            log.info(f"  文件路径: {report['readme_path']}")
+
+        return report
+
     def _stage_git(self):
-        """阶段 6: Git 提交推送。"""
+        """阶段 7: Git 提交推送。"""
         if self.dry_run:
             log.info("  [DRY_RUN] 跳过 Git 操作")
             return {"committed": False, "pushed": False, "dry_run": True}
@@ -234,7 +460,7 @@ class Pipeline(BasePipeline):
             return {"committed": False, "pushed": False, "error": str(e)}
 
     def _stage_report(self):
-        """阶段 7: 生成综合报告并推送通知。"""
+        """阶段 8: 生成综合报告并推送通知。"""
         report = self._generate_summary_report()
         report_path = os.path.join(OUTPUT_DIR, "pipeline-report.md")
         with open(report_path, "w", encoding="utf-8") as f:
@@ -247,7 +473,7 @@ class Pipeline(BasePipeline):
             scan = self.results.get("scan", {}).get("data", {})
             summary = scan.get("summary", {})
             notify_pipeline("tutorial", {
-                "version": "5.0",
+                "version": "5.2",
                 "duration": time.time() - self.start_time if self.start_time else 0,
                 "summary": summary,
             })
@@ -258,6 +484,7 @@ class Pipeline(BasePipeline):
 
     def _generate_summary_report(self) -> str:
         """生成 Markdown 格式的综合报告。"""
+        discover = self.results.get("discover", {}).get("data", {})
         scan = self.results.get("scan", {}).get("data", {})
         analysis = self.results.get("analyze", {}).get("data", {})
         refine = self.results.get("refine", {}).get("data", {})
@@ -267,6 +494,8 @@ class Pipeline(BasePipeline):
         consistency = self.results.get("check_consistency", {}).get("data", {})
         readability = self.results.get("check_readability", {}).get("data", {})
         tracking = self.results.get("track", {}).get("data", {})
+        readme_update = self.results.get("update_readme", {}).get("data", {})
+        fix_issues = self.results.get("fix_issues", {}).get("data", {})
 
         duration = time.time() - self.start_time if self.start_time else 0
 
@@ -287,6 +516,7 @@ class Pipeline(BasePipeline):
 
         summary = scan.get("summary", {})
         lines.extend([
+            f"| 发现文档总数 | {discover.get('total_files', '?')} |",
             f"| 已完成章节 | {summary.get('completed', '?')}/{scan.get('expected_chapters', '?')} |",
             f"| 平均质量分 | {summary.get('avg_score', '?')}/100 |",
             f"| 总字数 | {summary.get('total_words', '?')} |",
@@ -295,8 +525,10 @@ class Pipeline(BasePipeline):
             f"| 断链数 | {links.get('total_broken', '—')} |",
             f"| 链路健康分 | {links.get('health_score', '—')} |",
             f"| 一致性问题 | {consistency.get('total_issues', '—')} |",
+            f"| 自动修复 | {fix_issues.get('total_fixed', 0)} 处 |",
             f"| 本轮精炼 | {refine.get('refined', '?')} 章 |",
             f"| 格式修复 | {fmt.get('total_fixes', '?')} 处 |",
+            f"| README 更新 | {'是' if readme_update.get('status') == 'updated' else '否'} |",
             f"| Git 提交 | {'是' if git.get('committed') else '否'} |",
         ])
 
@@ -402,7 +634,7 @@ class Pipeline(BasePipeline):
             "",
             "---",
             "",
-            "> 自动生成 by OpenClaw Tutorial Auto Pipeline v5.0",
+            "> 自动生成 by OpenClaw Tutorial Auto Pipeline v5.2",
         ])
 
         return "\n".join(lines)
@@ -413,16 +645,19 @@ def main():
         """
     parser = argparse.ArgumentParser(description="教程自动优化流水线")
     parser.add_argument("--stage", type=str, default=None,
-                        help="仅运行指定阶段 (scan/analyze/collect_refs/refine/format/git/report)")
+                        help="仅运行指定阶段 (discover/scan/analyze/collect_refs/refine/format/update_readme/git/report)")
     parser.add_argument("--max-chapters", type=int, default=None,
                         help="最大优化章节数")
     parser.add_argument("--dry-run", action="store_true",
                         help="干跑模式，不写入文件")
-    parser.add_argument("--web-search", action="store_true",
-                        help="启用 Web 搜索更新参考来源")
+    parser.add_argument("--no-web-search", action="store_true",
+                        help="禁用 Web 搜索 (默认启用)")
     parser.add_argument("--check-external", action="store_true",
                         help="启用外部 URL 探活检查 (耗时)")
     args = parser.parse_args()
+
+    # Web 搜索默认启用
+    web_search = not getattr(args, "no_web_search", False)
 
     stages = None
     if args.stage:
@@ -439,7 +674,7 @@ def main():
         max_chapters=args.max_chapters,
         dry_run=args.dry_run,
         stages=stages,
-        web_search=args.web_search,
+        web_search=web_search,
         check_external=args.check_external,
     )
     result = pipeline.run()

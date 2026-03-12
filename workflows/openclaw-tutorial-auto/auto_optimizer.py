@@ -78,7 +78,7 @@ def run_tutorial_mode(args) -> dict:
         max_chapters=args.max_chapters,
         dry_run=args.dry_run,
         stages=stages,
-        web_search=getattr(args, "web_search", False),
+        web_search=getattr(args, "web_search", True),
         check_external=getattr(args, "check_external", False),
     )
     return pipeline.run()
@@ -133,8 +133,10 @@ def main():
     # 教程专用参数
     parser.add_argument("--max-chapters", type=int, default=None,
                         help="[tutorial] 最大优化章节数")
-    parser.add_argument("--web-search", action="store_true",
-                        help="[tutorial] 启用 Web 搜索")
+    parser.add_argument("--no-web-search", action="store_true",
+                        help="[tutorial] 禁用 Web 搜索 (默认启用)")
+    parser.add_argument("--web-search", action="store_true", default=True,
+                        help="[tutorial] 启用 Web 搜索 (默认启用)")
     parser.add_argument("--check-external", action="store_true",
                         help="[tutorial] 检查外部链接")
 
@@ -162,6 +164,10 @@ def main():
                         help="[ai] 思考级别 (默认: medium)")
 
     args = parser.parse_args()
+
+    # 处理 --no-web-search 标志
+    if getattr(args, "no_web_search", False):
+        args.web_search = False
 
     # 自动检测模式
     mode = args.mode

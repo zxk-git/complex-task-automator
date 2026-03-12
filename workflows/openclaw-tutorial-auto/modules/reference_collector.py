@@ -345,7 +345,7 @@ def _extract_domain_title(url: str) -> str:
 # ═══════════════════════════════════════════════════════
 
 def collect_for_chapter(chapter_num: int, chapter_data: dict = None,
-                        use_web_search: bool = False) -> dict:
+                        use_web_search: bool = True) -> dict:
     """
     为单个章节收集参考来源。
 
@@ -454,12 +454,12 @@ def _format_references_markdown(refs: list) -> str:
 # 全量收集
 # ═══════════════════════════════════════════════════════
 
-def collect_all(scan_report: dict = None, use_web_search: bool = False) -> dict:
+def collect_all(scan_report: dict = None, use_web_search: bool = True) -> dict:
     """为所有章节收集参考来源。
 
     Args:
         scan_report: 扫描报告数据
-        use_web_search: 是否启用 Web 搜索（默认 False，pipeline 中按需开启）
+        use_web_search: 是否启用 Web 搜索（默认 True，自动搜集最新网络信息）
     """
     if scan_report is None:
         scan_path = os.path.join(OUTPUT_DIR, "scan-report.json")

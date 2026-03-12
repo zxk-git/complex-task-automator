@@ -14,6 +14,63 @@ encoding: utf-8
 # ── 章节 ─────────────────────────────────────────────
 expected_chapters: 21
 
+# ── 目录发现 (discover 阶段) ─────────────────────────
+discover:
+  # 额外扫描的子目录 (除项目根目录外)
+  extra_dirs:
+    - docs
+    - tutorial
+    - tutorials
+    - guide
+    - guides
+    - chapters
+  # 排除的目录
+  exclude_dirs:
+    - node_modules
+    - __pycache__
+    - .git
+    - assets
+    - images
+    - _archive
+    - .cache
+    - drafts
+
+# ── README 自动生成 (update_readme 阶段) ───────────
+readme:
+  auto_update: true                 # 优化完成后自动更新 README
+  backup_old: true                  # 更新前备份旧 README
+  include_quality_stats: true       # 包含质量统计
+  include_learning_path: true       # 包含推荐学习路径
+
+# ── 扫描增强 (v5.2) ────────────────────────────────
+scan:
+  code_block_aware: true            # 代码块感知: 跳过代码块内的 # 注释
+  dense_block_threshold: 25         # 密排阈值 (连续行数)
+
+# ── 自动修复 (fix_issues 阶段, v5.2) ───────────────
+fix_issues:
+  auto_fix_links: true              # 自动修复内部断链 (3 策略)
+  auto_fix_consistency: true        # 自动修复术语/URL 不一致
+  protect_code_blocks: true         # 修复时保护代码块内容
+
+# ── 精炼操作开关 (v5.2) ────────────────────────────
+refine:
+  operations:
+    fix_code_closings: true         # P0: 修复损坏的代码块关闭
+    clean_scrape_artifacts: true    # P1: 清洗爬虫残留
+    deduplicate_sections: true      # P1: 去重段落
+    convert_github_alerts: true     # P1: Alert 语法统一
+    fix_heading_jumps: true         # 修复标题跳级
+    add_navigation: true            # 添加章首/章尾导航
+    add_badges: true                # shields.io 徽章
+    add_toc: true                   # 添加本章目录
+    add_code_labels: true           # 代码块语言标注
+    add_faq: true                   # 添加 FAQ
+    add_summary: true               # 添加本章小结
+    add_references: true            # 添加参考来源
+    fix_cjk_spacing: true           # 中英文间距
+    fix_dense_blocks: true          # 密排修复
+
 # ── 质量检查 (六维度评分 v2) ─────────────────────────
 quality:
   min_words_per_chapter: 1200        # 单章最低字数
