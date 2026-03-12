@@ -40,7 +40,7 @@ _RE_SUMMARY = re.compile(r"##\s*本章小结|##\s*小结|##\s*Summary", re.IGNOR
 _RE_REFERENCES = re.compile(r"##\s*参考来源|##\s*参考|##\s*References", re.IGNORECASE)
 _RE_CLI = re.compile(r"openclaw\s+\w+")
 _RE_BLOCKQUOTE = re.compile(r"^>\s+", re.MULTILINE)
-_RE_PLACEHOLDER = re.compile(r"TODO|TBD|待补充|待完善|FIXME|xxx|your-.*-here", re.IGNORECASE)
+_RE_PLACEHOLDER = re.compile(r"\bTODO\b|\bTBD\b|待补充|待完善|\bFIXME\b|\bxxx\b|your-.*-here", re.IGNORECASE)
 _RE_CHAPTER_NUM = re.compile(r"(\d+)")
 
 
@@ -245,7 +245,8 @@ def _extract_h2_sections(lines: list) -> list:
 
 
 # ── 评分常量（集中管理，禁止散落 magic numbers） ──────
-SCORING = {
+# 默认值；运行时可被 config.yaml 中 quality.weights / defect_penalties 覆盖
+_SCORING_DEFAULT = {
     # === 维度权重 (严格合计 100) ===
     "dim_content_depth":     25,   # D1: 内容深度
     "dim_structure":         20,   # D2: 结构完整性
@@ -290,6 +291,40 @@ SCORING = {
     "penalty_major":     3,   # heading_jump, dense_block
     "penalty_minor":     1,   # unlabeled_code_block, short_section
 }
+
+# ── 从 config.yaml 合并权重和惩罚 ────────────────────
+def _build_scoring():
+    """合并 config.yaml 配置到 SCORING，config 优先"""
+    s = dict(_SCORING_DEFAULT)
+    # 合并维度权重
+    _WEIGHT_MAP = {
+        "content_depth": "dim_content_depth",
+        "structure":     "dim_structure",
+        "code_quality":  "dim_code_quality",
+        "pedagogy":      "dim_pedagogy",
+        "references":    "dim_references",
+        "readability":   "dim_readability",
+    }
+    try:
+        cfg_weights = cfg("quality.weights") or {}
+        for cfg_key, scoring_key in _WEIGHT_MAP.items():
+            if cfg_key in cfg_weights:
+                s[scoring_key] = cfg_weights[cfg_key]
+        # 合并缺陷惩罚
+        cfg_penalties = cfg("quality.defect_penalties") or {}
+        for level in ("critical", "major", "minor"):
+            if level in cfg_penalties:
+                s[f"penalty_{level}"] = cfg_penalties[level]
+        # 合并密排阈值
+        dense_thresh = cfg("scan.dense_block_threshold")
+        if dense_thresh:
+            # 这里不直接影响 SCORING，但保持一致性
+            pass
+    except Exception:
+        pass  # 配置不可用时使用默认值
+    return s
+
+SCORING = _build_scoring()
 
 DEFECT_SEVERITY = {
     "placeholder":          "critical",
