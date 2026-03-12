@@ -80,6 +80,7 @@ def run_tutorial_mode(args) -> dict:
         stages=stages,
         web_search=getattr(args, "web_search", True),
         check_external=getattr(args, "check_external", False),
+        incremental=getattr(args, "incremental", False),
     )
     return pipeline.run()
 
@@ -147,6 +148,8 @@ def main():
                         help="[code] 仅扫描指定扩展名")
 
     # 增量模式参数
+    parser.add_argument("--incremental", action="store_true",
+                        help="[tutorial] 增量模式: 仅处理上次运行后变更的文件 (mtime+size 缓存)")
     parser.add_argument("--diff", action="store_true",
                         help="增量模式: 仅分析 git diff 变更的文件")
     parser.add_argument("--since", type=str, default="HEAD~1",

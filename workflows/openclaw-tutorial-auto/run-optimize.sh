@@ -13,6 +13,7 @@
 #    ./run-optimize.sh --dry-run              # 干跑模式
 #    ./run-optimize.sh --no-web-search        # 禁用 Web 搜索
 #    ./run-optimize.sh --max-chapters 5       # 限制章节数
+#    ./run-optimize.sh --incremental           # 增量模式 (mtime+size 缓存)
 # =========================================================
 
 set -euo pipefail
@@ -36,6 +37,7 @@ while [[ $# -gt 0 ]]; do
         --max-chapters)   MAX_CHAPTERS="$2"; shift 2 ;;
         --dry-run)        DRY_RUN="--dry-run"; shift ;;
         --no-web-search)  EXTRA_ARGS="${EXTRA_ARGS} --no-web-search"; shift ;;
+        --incremental)    EXTRA_ARGS="${EXTRA_ARGS} --incremental"; shift ;;
         --stage)          EXTRA_ARGS="${EXTRA_ARGS} --stage $2"; shift 2 ;;
         --help|-h)
             echo "用法: $0 [--mode tutorial|code|both|auto] [--max-chapters N] [--dry-run] [--no-web-search] [--stage NAME]"

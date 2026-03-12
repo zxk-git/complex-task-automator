@@ -95,9 +95,20 @@ def scan_chapter(filepath: str) -> ChapterScanResult:
     has_nav = bool(_RE_NAV.search(text))
 
     # ── 内容质量指标 ──
-    code_blocks = _RE_CODE_BLOCK.findall(text)
-    code_block_count = len(code_blocks) // 2  # 每个代码块有 open + close 两个 fence
-    code_langs = [c for c in code_blocks if c]
+    # 行级解析: 正确处理代码块内嵌 ``` 的情况 (如 grep -c '```')
+    _in_code = False
+    code_block_count = 0
+    code_langs = []
+    for _line in text.split("\n"):
+        _m = re.match(r"^\s*```(\w*)\s*$", _line)
+        if _m:
+            if _in_code:
+                _in_code = False       # 关闭
+            else:
+                _in_code = True        # 开启
+                code_block_count += 1
+                if _m.group(1):
+                    code_langs.append(_m.group(1))
     unlabeled_code = max(0, code_block_count - len(code_langs))
 
     tables = len(_RE_TABLE.findall(text))

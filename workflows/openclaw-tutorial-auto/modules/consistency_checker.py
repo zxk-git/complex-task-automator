@@ -90,10 +90,10 @@ URL_CANONICAL = {
 # 内容指纹 (用于重复检测)
 # ═══════════════════════════════════════════════════════
 
-def _compute_paragraph_hashes(text: str, min_words: int = 30) -> list:
+def _compute_paragraph_hashes(text: str, min_words: int = 40) -> list:
     """
     将文本按段落切分，计算每段的指纹 hash。
-    仅保留超过 min_words 字的段落。
+    仅保留超过 min_words 字的段落，跳过表格段落。
     返回 list[dict]: {hash, text_preview, word_count, start_line}
     """
     paragraphs = []
@@ -115,6 +115,11 @@ def _compute_paragraph_hashes(text: str, min_words: int = 30) -> list:
         else:
             if current:
                 para_text = "\n".join(current)
+                # 跳过表格段落 (>50% 行以 | 开头): 表格结构自然重复，不算真正的内容重复
+                table_lines = sum(1 for l in current if l.strip().startswith('|'))
+                if table_lines > len(current) * 0.5:
+                    current = []
+                    continue
                 wc = word_count(para_text)
                 if wc >= min_words:
                     # 标准化后取 hash
@@ -131,16 +136,18 @@ def _compute_paragraph_hashes(text: str, min_words: int = 30) -> list:
     # 最后一个段落
     if current:
         para_text = "\n".join(current)
-        wc = word_count(para_text)
-        if wc >= min_words:
-            normalized = re.sub(r'\s+', ' ', para_text.strip().lower())
-            h = hashlib.md5(normalized.encode()).hexdigest()[:12]
-            paragraphs.append({
-                "hash": h,
-                "text_preview": para_text[:120],
-                "word_count": wc,
-                "start_line": start_line,
-            })
+        table_lines = sum(1 for l in current if l.strip().startswith('|'))
+        if table_lines <= len(current) * 0.5:
+            wc = word_count(para_text)
+            if wc >= min_words:
+                normalized = re.sub(r'\s+', ' ', para_text.strip().lower())
+                h = hashlib.md5(normalized.encode()).hexdigest()[:12]
+                paragraphs.append({
+                    "hash": h,
+                    "text_preview": para_text[:120],
+                    "word_count": wc,
+                    "start_line": start_line,
+                })
 
     return paragraphs
 
@@ -404,9 +411,10 @@ def _check_command_consistency(chapters_data: list) -> list:
 
     # 检查同一基础命令的不同参数写法
     # 比如 openclaw skill install xxx vs openclaw skill add xxx
+    # 仅记录真正的别名命令 (同一操作的不同写法)
+    # 注意: openclaw config set / edit 是不同子命令，不属于别名
     KNOWN_CMD_ALIASES = {
         "openclaw skill": {"install", "add"},
-        "openclaw config": {"set", "edit"},
     }
     for base, usages in cmd_groups.items():
         if base in KNOWN_CMD_ALIASES:
