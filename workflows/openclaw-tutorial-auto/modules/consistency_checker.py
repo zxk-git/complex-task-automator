@@ -146,6 +146,69 @@ def _compute_paragraph_hashes(text: str, min_words: int = 30) -> list:
 
 
 # ═══════════════════════════════════════════════════════
+# 代码区间计算（排除行内代码 + 围栏代码块）
+# ═══════════════════════════════════════════════════════
+
+def _compute_code_ranges(text: str) -> list[tuple[int, int]]:
+    """预计算 text 中所有代码区间 (start, end) 偏移量。
+
+    包括：
+    - 围栏代码块 (``` ... ```)
+    - 行内代码 (` ... `)
+    返回的区间用于快速判断某个位置是否在代码内。
+    """
+    ranges: list[tuple[int, int]] = []
+
+    # 围栏代码块
+    in_fence = False
+    fence_start = 0
+    for m in re.finditer(r'^(`{3,})[^\S\n]*\S*[^\S\n]*$', text, re.MULTILINE):
+        if not in_fence:
+            in_fence = True
+            fence_start = m.start()
+        else:
+            ranges.append((fence_start, m.end()))
+            in_fence = False
+    # 如果最后一个 fence 未闭合，保护到文本末尾
+    if in_fence:
+        ranges.append((fence_start, len(text)))
+
+    # 行内代码（但不在已有围栏范围内）
+    for m in re.finditer(r'`[^`\n]+`', text):
+        s, e = m.start(), m.end()
+        # 检查是否与围栏区间重叠（已被覆盖则跳过）
+        overlap = any(rs <= s < re for rs, re in ranges)
+        if not overlap:
+            ranges.append((s, e))
+
+    ranges.sort()
+    return ranges
+
+
+def _in_code(pos: int, code_ranges: list[tuple[int, int]]) -> bool:
+    """判断偏移量 pos 是否落在任何代码区间内（二分查找）。"""
+    lo, hi = 0, len(code_ranges) - 1
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        s, e = code_ranges[mid]
+        if pos < s:
+            hi = mid - 1
+        elif pos >= e:
+            lo = mid + 1
+        else:
+            return True
+    return False
+
+
+# 文件名/路径模式：这些即使在散文中也不应被"纠正"
+_RE_FILENAME_CONTEXT = re.compile(
+    r'(?:~/?\.|/\w+/)\S*$'   # 路径前缀 ~/.xxx 或 /root/...
+    r'|(?:\w+\.(?:json|yaml|yml|md|sh|py|ts|js))\b',  # 文件名后缀
+    re.IGNORECASE,
+)
+
+
+# ═══════════════════════════════════════════════════════
 # 单文件分析
 # ═══════════════════════════════════════════════════════
 
@@ -159,23 +222,33 @@ def _analyze_chapter(filepath: str) -> dict:
         text = f.read()
 
     lines = text.split("\n")
+    code_ranges = _compute_code_ranges(text)
 
     # 术语使用
     term_usages = defaultdict(list)
     for term, patterns in TERMINOLOGY_RULES.items():
         for pat in patterns:
             for m in re.finditer(pat, text):
-                # 获取行号
                 pos = m.start()
+                # 跳过代码区间（围栏 + 行内）
+                if _in_code(pos, code_ranges):
+                    continue
                 line_num = text[:pos].count("\n") + 1
-                # 检查是否在代码块内
-                code_count = text[:pos].count("```")
-                if code_count % 2 == 1:
-                    continue  # 代码块内，跳过
+                ctx_line = lines[line_num - 1]
+                # 跳过文件名/路径上下文（如 openclaw.json、~/.openclaw）
+                col = pos - text.rfind("\n", 0, pos) - 1
+                preceding = ctx_line[:col]
+                following = ctx_line[col + len(m.group()):]
+                # 路径前缀（~/. 或 /root/.）
+                if re.search(r'[~/\\.]\S*$', preceding):
+                    continue
+                # 文件后缀（.json, .yaml, .md 等）
+                if re.match(r'\.\w+\b', following):
+                    continue
                 term_usages[term].append({
                     "variant": m.group(),
                     "line": line_num,
-                    "context": lines[line_num - 1].strip()[:100],
+                    "context": ctx_line.strip()[:100],
                 })
 
     # URL 提取
@@ -183,11 +256,9 @@ def _analyze_chapter(filepath: str) -> dict:
     for m in re.finditer(r'https?://[^\s\)\"\'<>]+', text):
         url = m.group().rstrip(".,;:)")
         pos = m.start()
-        line_num = text[:pos].count("\n") + 1
-        # 检查代码块
-        code_count = text[:pos].count("```")
-        if code_count % 2 == 1:
+        if _in_code(pos, code_ranges):
             continue
+        line_num = text[:pos].count("\n") + 1
         urls.append({"url": url, "line": line_num})
 
     # 命令提取 (openclaw 命令)
@@ -624,7 +695,7 @@ def auto_fix(project_dir: str = None, consistency_report: dict = None,
 
 
 def _replace_outside_code_blocks(text: str, old: str, new: str) -> str:
-    """在代码块外替换文本（保护代码块内容不被修改）。"""
+    """在代码块外替换文本（保护代码块、行内代码、文件名/路径）。"""
     lines = text.split("\n")
     result = []
     in_code = False
@@ -644,7 +715,18 @@ def _replace_outside_code_blocks(text: str, old: str, new: str) -> str:
             if part.startswith('`') and part.endswith('`'):
                 new_parts.append(part)  # 行内代码不替换
             else:
-                new_parts.append(part.replace(old, new))
+                # 保护文件名/路径上下文（如 openclaw.json、~/.openclaw/）
+                def _safe_replace(m: re.Match) -> str:
+                    s = m.start()
+                    ctx_before = part[:s]
+                    ctx_after = part[s + len(old):]
+                    # 如果紧跟 .json/.yaml 等后缀，或前面是路径字符，不替换
+                    if re.search(r'[~/\\.]\S*$', ctx_before):
+                        return m.group()
+                    if re.match(r'\.\w+\b', ctx_after):
+                        return m.group()
+                    return new
+                new_parts.append(re.sub(re.escape(old), _safe_replace, part))
         result.append("".join(new_parts))
     return "\n".join(result)
 
