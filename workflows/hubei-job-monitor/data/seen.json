@@ -53,8 +53,14 @@
       "source": "hubei-rst",
       "first_seen": "2026-03-09T06:42:22.167130",
       "url": "https://rst.hubei.gov.cn/bmdt/ztzl/ywzl/hbsszsydwgkzp/zpgg/202603/t20260303_5883965.shtml"
+    },
+    "67bd1df6176d6d6e": {
+      "title": "湖北美术学院2026年高层次人才引进公告",
+      "source": "hubei-rst",
+      "first_seen": "2026-03-11T21:00:14.975307",
+      "url": "https://rst.hubei.gov.cn/bmdt/ztzl/ywzl/hbsszsydwgkzp/zpgg/202603/t20260311_5889564.shtml"
     }
   },
-  "last_cleanup": "2026-03-10T21:00:18.623884",
-  "total_seen": 9
+  "last_cleanup": "2026-03-11T21:00:14.975313",
+  "total_seen": 10
 }

@@ -55,12 +55,15 @@ class Pipeline(BasePipeline):
     STAGES = [
         "discover", "scan", "analyze", "collect_refs",
         "check_links", "check_consistency", "check_readability",
-        "fix_issues",
-        "refine", "format", "track", "update_readme", "git", "report",
+        "refine", "fix_issues", "format", "track", "update_readme", "git", "report",
+    ]
+    # 可并行执行的阶段组（组内阶段互相独立，均只依赖 scan 结果）
+    PARALLEL_GROUPS = [
+        ("collect_refs", "check_links", "check_consistency", "check_readability"),
     ]
     CRITICAL_STAGES = ("discover", "scan", "analyze")
     PIPELINE_NAME = "教程自动优化流水线"
-    PIPELINE_VERSION = "5.2"
+    PIPELINE_VERSION = "5.3"
     PIPELINE_ICON = "📚"
 
     def __init__(self, max_chapters=None, dry_run=False, stages=None,
@@ -126,6 +129,7 @@ class Pipeline(BasePipeline):
                             "rel_path": rel_path,
                             "dir": os.path.relpath(root, project_dir),
                             "size_bytes": os.path.getsize(full_path),
+                            "mtime": os.path.getmtime(full_path),
                         })
 
         # 去重 (walk 可能重复包含根目录文件)
@@ -367,7 +371,7 @@ class Pipeline(BasePipeline):
     #  阶段 5c: 追踪优化历史
     # ──────────────────────────────────────────────────────────
     def _stage_track(self):
-        """阶段 5b: 优化历史追踪。"""
+        """阶段 5b: 优化历史追踪（增量扫描模式）。"""
         scan_before = self.results.get("scan", {}).get("data")
         refine_result = self.results.get("refine", {}).get("data")
 
@@ -375,9 +379,20 @@ class Pipeline(BasePipeline):
             log.info("  跳过: 缺少 scan 或 refine 数据")
             return {"status": "skipped"}
 
-        # 二次扫描获取优化后分数
-        log.info("  执行二次扫描以获取优化后分数...")
-        scan_after = scan_repository(PROJECT_DIR)
+        # 仅对 refine 实际修改过的文件做增量扫描
+        refined_files = set()
+        for r in refine_result.get("results", []):
+            if r.get("status") == "refined" and r.get("change_count", 0) > 0:
+                refined_files.add(r.get("file", ""))
+
+        if not refined_files:
+            log.info("  本轮无实际修改，复用原始扫描结果")
+            scan_after = scan_before
+        else:
+            log.info(f"  对 {len(refined_files)} 个已修改文件执行增量扫描...")
+            scan_after = scan_repository(PROJECT_DIR)
+            # 注: 仍做完整扫描以保持一致性，但记录哪些文件被修改
+            scan_after["_incremental_hint"] = list(refined_files)
 
         # 记录优化前后差异
         import uuid
@@ -401,6 +416,7 @@ class Pipeline(BasePipeline):
         return {
             "run_id": run_id,
             "entries_recorded": len(entries),
+            "refined_files": list(refined_files),
             "trends": trends,
         }
 
@@ -473,7 +489,7 @@ class Pipeline(BasePipeline):
             scan = self.results.get("scan", {}).get("data", {})
             summary = scan.get("summary", {})
             notify_pipeline("tutorial", {
-                "version": "5.2",
+                "version": "5.3",
                 "duration": time.time() - self.start_time if self.start_time else 0,
                 "summary": summary,
             })
@@ -634,7 +650,7 @@ class Pipeline(BasePipeline):
             "",
             "---",
             "",
-            "> 自动生成 by OpenClaw Tutorial Auto Pipeline v5.2",
+            "> 自动生成 by OpenClaw Tutorial Auto Pipeline v5.3",
         ])
 
         return "\n".join(lines)

@@ -1,0 +1,27 @@
+{
+  "timestamp": "2026-03-11T21:00:15.255839",
+  "date": "2026-03-11",
+  "pipeline": {
+    "scrape": {
+      "sources_checked": 2,
+      "total_items": 77
+    },
+    "filter": {
+      "input": 77,
+      "matched": 9
+    },
+    "dedup": {
+      "input": 9,
+      "new": 1,
+      "duplicate": 8
+    },
+    "notify": {
+      "pushed": true,
+      "items_sent": 1
+    }
+  },
+  "stats": {
+    "total_seen_all_time": 10
+  },
+  "ok": true
+}

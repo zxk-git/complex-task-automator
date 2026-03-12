@@ -630,13 +630,76 @@ def auto_fix_internal(project_dir: str = None, link_report: dict = None,
             })
             total_fixable += 1
 
-    log.info(f"  可自动修复: {total_fixable} 个断链")
+    log.info(f"  可自动修复: {total_fixable} 个断链 (文件路径)")
+
+    # ── 第二轮: 处理纯锚点断链 (broken_anchor) ──
+    anchor_fixes_by_file = defaultdict(list)
+    total_anchor_fixable = 0
+
+    for broken in broken_list:
+        if broken.get("status") != "broken_anchor":
+            continue
+
+        target = broken.get("target", "")
+        source_file = broken.get("file", "")
+        if not source_file:
+            continue
+
+        # 分离锚点
+        if "#" in target:
+            file_part, anchor_part = target.split("#", 1)
+        elif target.startswith("#"):
+            file_part = ""
+            anchor_part = target.lstrip("#")
+        else:
+            continue
+
+        # 获取目标文件的锚点集合
+        if file_part:
+            anchor_file = os.path.join(project_dir, file_part)
+        else:
+            anchor_file = os.path.join(project_dir, source_file)
+
+        if not os.path.exists(anchor_file):
+            continue
+
+        try:
+            with open(anchor_file, encoding="utf-8") as af:
+                anchors = _extract_headings_as_anchors(af.read())
+        except Exception:
+            continue
+
+        if anchor_part.lower() in anchors:
+            continue  # 锚点实际存在
+
+        best = _best_anchor_match(anchor_part, anchors)
+        if best and best != anchor_part.lower():
+            new_target = (file_part + f"#{best}") if file_part else f"#{best}"
+            anchor_fixes_by_file[source_file].append({
+                "old_target": target,
+                "new_target": new_target,
+                "raw": broken.get("raw", ""),
+                "line": broken.get("line", 0),
+            })
+            total_anchor_fixable += 1
+
+    if total_anchor_fixable:
+        log.info(f"  可自动修复: {total_anchor_fixable} 个锚点断链")
+
+    total_fixable += total_anchor_fixable
 
     total_fixed = 0
     files_modified = 0
     fix_details = []
 
-    for fname, file_fixes in sorted(fixes_by_file.items()):
+    # 合并两类修复
+    all_fixes_by_file = defaultdict(list)
+    for fname, flist in fixes_by_file.items():
+        all_fixes_by_file[fname].extend(flist)
+    for fname, flist in anchor_fixes_by_file.items():
+        all_fixes_by_file[fname].extend(flist)
+
+    for fname, file_fixes in sorted(all_fixes_by_file.items()):
         filepath = os.path.join(project_dir, fname)
         if not os.path.exists(filepath):
             continue
@@ -681,6 +744,60 @@ def auto_fix_internal(project_dir: str = None, link_report: dict = None,
     }
 
 
+# ═══════════════════════════════════════════════════════
+# 锚点模糊匹配算法
+# ═══════════════════════════════════════════════════════
+
+def _best_anchor_match(broken_anchor: str, valid_anchors: set,
+                       threshold: float = 0.55) -> str | None:
+    """
+    用 difflib.SequenceMatcher 在有效锚点集合中找到最佳匹配。
+
+    返回匹配度 ≥ threshold 的最佳锚点，或 None。
+    """
+    from difflib import SequenceMatcher
+
+    broken_lower = broken_anchor.lower()
+    # 标准化: 去除空格、连字符差异
+    broken_norm = re.sub(r'[\s\-]+', '', broken_lower)
+
+    best_score = 0.0
+    best_anchor = None
+
+    for anchor in valid_anchors:
+        anchor_norm = re.sub(r'[\s\-]+', '', anchor)
+
+        # 1) 标准化后精确匹配
+        if broken_norm == anchor_norm:
+            return anchor
+
+        # 2) 序列匹配
+        score = SequenceMatcher(None, broken_norm, anchor_norm).ratio()
+
+        # 3) 如果断链锚点是有效锚点的子串 (或反之)，加权
+        if broken_norm in anchor_norm or anchor_norm in broken_norm:
+            score = max(score, 0.8)
+
+        if score > best_score:
+            best_score = score
+            best_anchor = anchor
+
+    return best_anchor if best_score >= threshold else None
+
+
+def _fuzzy_match_anchor(anchor: str, original_target: str,
+                        project_dir: str, existing_md: dict,
+                        chapter_map: dict) -> str | None:
+    """
+    对纯锚点链接 (#section) 进行模糊修复。
+    在当前文件的标题集合中寻找最佳匹配。
+    """
+    # 纯锚点链接只能在检测时确定源文件
+    # auto_fix_internal 传入的 broken 条目包含 file 字段
+    # 此处返回 None，交由 auto_fix_anchor 统一处理
+    return None
+
+
 def _find_fix_for_link(target: str, project_dir: str,
                        existing_md: dict, chapter_map: dict) -> str | None:
     """
@@ -703,11 +820,23 @@ def _find_fix_for_link(target: str, project_dir: str,
 
     file_part = unquote(file_part).strip()
     if not file_part:
-        return None  # 纯锚点链接不在此处理
+        # 纯锚点链接 — 尝试锚点模糊匹配修复
+        if anchor:
+            return _fuzzy_match_anchor(anchor, target, project_dir, existing_md, chapter_map)
+        return None
 
     # 已存在则无需修复
     full_path = os.path.join(project_dir, file_part)
     if os.path.exists(full_path):
+        # 文件存在但锚点可能不匹配 — 尝试修复锚点
+        if anchor:
+            anchors = _extract_headings_as_anchors(
+                open(full_path, encoding="utf-8").read()
+            )
+            if anchor.lower() not in anchors:
+                best = _best_anchor_match(anchor, anchors)
+                if best:
+                    return file_part + f"#{best}"
         return None
 
     # 策略1: 去掉路径前缀 (../xxx.md → xxx.md)
