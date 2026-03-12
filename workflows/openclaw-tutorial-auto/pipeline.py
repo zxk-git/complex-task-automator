@@ -67,11 +67,36 @@ class Pipeline(BasePipeline):
     PIPELINE_ICON = "📚"
 
     def __init__(self, max_chapters=None, dry_run=False, stages=None,
-                 web_search=True, check_external=False):
+                 web_search=True, check_external=False, incremental=False):
         super().__init__(dry_run=dry_run, stages=stages)
         self.max_chapters = max_chapters
         self.web_search = web_search
         self.check_external = check_external
+        self.incremental = incremental
+        self.changed_files: set = set()  # 增量模式下的变更文件集合
+        self._cache_path = os.path.join(OUTPUT_DIR, "file-cache.json")
+
+    def _save_file_cache(self):
+        """保存文件 mtime+size 缓存（用于增量检测）。
+
+        在所有文件修改完成后调用，确保缓存反映最终状态。
+        """
+        discover_data = self.results.get("discover", {}).get("data", {})
+        files = discover_data.get("files", [])
+        if not files:
+            return
+
+        # 重新读取当前 mtime (文件可能已被 refine/format 修改)
+        new_cache = {}
+        for f in files:
+            path = f["path"]
+            if os.path.exists(path):
+                new_cache[f["rel_path"]] = {
+                    "mtime": os.path.getmtime(path),
+                    "size_bytes": os.path.getsize(path),
+                }
+        save_json(self._cache_path, new_cache)
+        log.info(f"  文件缓存已更新: {len(new_cache)} 个文件")
 
     @property
     def output_dir(self) -> str:
@@ -163,6 +188,40 @@ class Pipeline(BasePipeline):
         }
 
         save_json(os.path.join(OUTPUT_DIR, "discover-report.json"), report)
+
+        # ── 增量检测: 对比缓存，标记变更文件 ──
+        if self.incremental:
+            cached = {}
+            if os.path.exists(self._cache_path):
+                try:
+                    with open(self._cache_path, encoding="utf-8") as cf:
+                        cached = json.load(cf)
+                except Exception:
+                    cached = {}
+
+            changed = set()
+            for f in all_md_files:
+                key = f["rel_path"]
+                prev = cached.get(key, {})
+                if (f["mtime"] != prev.get("mtime") or
+                        f["size_bytes"] != prev.get("size_bytes")):
+                    changed.add(key)
+
+            # 新文件也算变更
+            current_keys = {f["rel_path"] for f in all_md_files}
+            new_files = current_keys - set(cached.keys())
+            changed |= new_files
+
+            self.changed_files = changed
+
+            report["changed_files"] = sorted(changed)
+            report["incremental"] = True
+            log.info(f"  增量模式: {len(changed)}/{len(all_md_files)} 个文件有变更")
+            if not changed:
+                log.info("  🎯 无文件变更，后续阶段将使用快速路径")
+        else:
+            self.changed_files = {f["rel_path"] for f in all_md_files}
+            report["incremental"] = False
 
         log.info(f"  总文件数: {len(all_md_files)}")
         log.info(f"  根目录章节: {len(root_chapter_files)}")
@@ -339,20 +398,48 @@ class Pipeline(BasePipeline):
         consistency_report = self.results.get("check_consistency", {}).get("data")
         link_report = self.results.get("check_links", {}).get("data")
 
+        # ── 增量模式: 仅精炼变更文件 ──
+        incremental_report = None
+        if self.incremental and analysis_report:
+            all_chapters = analysis_report.get("chapters", [])
+            changed_chapters = [
+                ch for ch in all_chapters
+                if ch.get("file", "") in self.changed_files
+            ]
+            skipped = len(all_chapters) - len(changed_chapters)
+            if skipped > 0:
+                log.info(f"  增量模式: 跳过 {skipped} 个未变更章节，仅精炼 {len(changed_chapters)} 个")
+                incremental_report = {"skipped_unchanged": skipped}
+                analysis_report = dict(analysis_report)
+                analysis_report["chapters"] = changed_chapters
+            if not changed_chapters:
+                log.info("  增量模式: 无变更章节需要精炼")
+                return {
+                    "refine_time": None,
+                    "total_processed": 0,
+                    "refined": 0,
+                    "no_change": 0,
+                    "incremental_skipped": len(all_chapters),
+                    "results": [],
+                    "total_changes": 0,
+                }
+
         # max_chapters=None 确保处理所有文档，除非用户明确指定了限制
         effective_max = self.max_chapters
-        if effective_max is None and discover_total > 0:
+        if effective_max is None and discover_total > 0 and not incremental_report:
             log.info(f"  将处理全部 {discover_total} 个根目录章节文档 (无数量限制)")
         elif effective_max:
             log.info(f"  用户指定限制: 最多处理 {effective_max} 个章节")
 
         report = refine_all(analysis_report, max_chapters=effective_max,
                             references_report=references_report)
+        if incremental_report:
+            report.update(incremental_report)
         save_json(os.path.join(OUTPUT_DIR, "refine-result.json"), report)
 
         # 验证完整性 (仅与根目录章节数比较)
         processed = report.get("total_processed", 0)
-        if discover_total > 0 and processed < discover_total and effective_max is None:
+        if discover_total > 0 and processed < discover_total and effective_max is None and not incremental_report:
             log.warning(f"  ⚠️ 仅处理 {processed}/{discover_total} 个根目录章节，可能存在遗漏")
 
         log.info(f"  精炼: {report.get('refined', 0)}/{processed}")
@@ -482,6 +569,10 @@ class Pipeline(BasePipeline):
         with open(report_path, "w", encoding="utf-8") as f:
             f.write(report)
         log.info(f"  报告: {report_path}")
+
+        # ── 增量模式: 保存文件缓存 (所有文件修改已完成) ──
+        if self.incremental:
+            self._save_file_cache()
 
         # ── 推送通知 ──
         try:
@@ -670,6 +761,8 @@ def main():
                         help="禁用 Web 搜索 (默认启用)")
     parser.add_argument("--check-external", action="store_true",
                         help="启用外部 URL 探活检查 (耗时)")
+    parser.add_argument("--incremental", action="store_true",
+                        help="增量模式: 仅处理自上次运行以来变更的文件")
     args = parser.parse_args()
 
     # Web 搜索默认启用
@@ -692,6 +785,7 @@ def main():
         stages=stages,
         web_search=web_search,
         check_external=args.check_external,
+        incremental=getattr(args, "incremental", False),
     )
     result = pipeline.run()
 

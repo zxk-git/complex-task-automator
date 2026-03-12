@@ -96,9 +96,9 @@ def scan_chapter(filepath: str) -> ChapterScanResult:
 
     # ── 内容质量指标 ──
     code_blocks = _RE_CODE_BLOCK.findall(text)
-    code_block_count = len(code_blocks)
+    code_block_count = len(code_blocks) // 2  # 每个代码块有 open + close 两个 fence
     code_langs = [c for c in code_blocks if c]
-    unlabeled_code = code_block_count - len(code_langs)
+    unlabeled_code = max(0, code_block_count - len(code_langs))
 
     tables = len(_RE_TABLE.findall(text))
     images = len(_RE_IMAGE.findall(text))
