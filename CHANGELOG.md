@@ -4,6 +4,20 @@ All notable changes to the `complex-task-automator` skill are documented here.
 
 ---
 
+## [5.5.0] — 2026-03-12
+
+### Added
+- **LLM 扩写分析** (`llm_expand` 阶段): 自动识别短段落/缺失维度，生成结构化扩写 Prompt (`modules/llm_expander.py`)
+- **多语言 i18n 系统** (`modules/i18n.py`): zh-CN / en 双语消息目录，`set_locale()` / `t()` API，支持插件注册额外消息
+- **HTML 可视化报告** (`html_report` 阶段): 静态 HTML + ECharts 5 图表 — 得分柱状图、分数区间饼图、维度雷达图、字数分布图
+- `--language` CLI 参数: 控制报告和日志的输出语言 (`zh-CN` / `en`)
+- Pipeline 升级至 16 阶段 (新增 `llm_expand` + `html_report`)
+
+### Changed
+- PIPELINE_VERSION 5.4 → 5.5
+- STAGES 从 14 个增至 16 个
+- SKILL.md 同步更新特性表和描述
+
 ## [5.4.0] — 2026-03-12
 
 ### Added

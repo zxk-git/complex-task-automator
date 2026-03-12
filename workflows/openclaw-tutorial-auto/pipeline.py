@@ -38,6 +38,9 @@ from modules.link_checker import check_all as check_links, auto_fix_internal as 
 from modules.consistency_checker import check_all as check_consistency, auto_fix as fix_consistency
 from modules.readability_analyzer import analyze_all as analyze_readability
 from modules.optimization_tracker import record_batch, analyze_trends
+from modules.llm_expander import analyze_expansion_needs, generate_expansion_prompts
+from modules.html_reporter import generate_html_report
+from modules.i18n import set_locale, get_locale, t
 from modules.compat import setup_logger, cfg, save_json
 from base_pipeline import BasePipeline
 
@@ -55,7 +58,8 @@ class Pipeline(BasePipeline):
     STAGES = [
         "discover", "scan", "analyze", "collect_refs",
         "check_links", "check_consistency", "check_readability",
-        "refine", "fix_issues", "format", "track", "update_readme", "git", "report",
+        "llm_expand", "refine", "fix_issues", "format",
+        "track", "update_readme", "git", "report", "html_report",
     ]
     # 可并行执行的阶段组（组内阶段互相独立，均只依赖 scan 结果）
     PARALLEL_GROUPS = [
@@ -63,12 +67,12 @@ class Pipeline(BasePipeline):
     ]
     CRITICAL_STAGES = ("discover", "scan", "analyze")
     PIPELINE_NAME = "教程自动优化流水线"
-    PIPELINE_VERSION = "5.4"
+    PIPELINE_VERSION = "5.5"
     PIPELINE_ICON = "📚"
 
     def __init__(self, max_chapters=None, dry_run=False, stages=None,
                  web_search=True, check_external=False, incremental=False,
-                 refine_threshold=None):
+                 refine_threshold=None, language=None):
         super().__init__(dry_run=dry_run, stages=stages)
         self.max_chapters = max_chapters
         self.web_search = web_search
@@ -77,6 +81,9 @@ class Pipeline(BasePipeline):
         self.refine_threshold = refine_threshold  # 跳过超过此分数的章节
         self.changed_files: set = set()  # 增量模式下的变更文件集合
         self._cache_path = os.path.join(OUTPUT_DIR, "file-cache.json")
+        # v5.5: 多语言支持
+        if language:
+            set_locale(language)
 
     def _save_file_cache(self):
         """保存文件 mtime+size 缓存（用于增量检测）。
@@ -387,6 +394,30 @@ class Pipeline(BasePipeline):
         log.info(f"  总自动修复: {total_fixed} 处")
         return report
 
+    def _stage_llm_expand(self):
+        """阶段 3f: LLM 扩写分析 — 识别薄弱段落，生成扩写建议和 Prompt。"""
+        scan_report = self.results.get("scan", {}).get("data")
+        analysis_report = self.results.get("analyze", {}).get("data")
+
+        if not scan_report:
+            log.info("  跳过: 缺少 scan 数据")
+            return {"status": "skipped"}
+
+        report = analyze_expansion_needs(
+            scan_report=scan_report,
+            analysis_report=analysis_report,
+            config={"language": get_locale()},
+        )
+
+        # 生成可执行 Prompt 列表
+        prompts = generate_expansion_prompts(report, output_dir=OUTPUT_DIR)
+        report["prompts_generated"] = len(prompts)
+
+        save_json(os.path.join(OUTPUT_DIR, "llm-expand-report.json"), report)
+        log.info(f"  需扩写章节: {report.get('chapters_needing_expansion', 0)}/{report.get('total_chapters', 0)}")
+        log.info(f"  总建议: {report.get('total_suggestions', 0)}, Prompt: {len(prompts)}")
+        return report
+
     def _stage_refine(self):
         """阶段 4: 内容精炼 (处理所有教程文档，不遗漏)。"""
         analysis_report = self.results.get("analyze", {}).get("data")
@@ -603,7 +634,7 @@ class Pipeline(BasePipeline):
             scan = self.results.get("scan", {}).get("data", {})
             summary = scan.get("summary", {})
             notify_pipeline("tutorial", {
-                "version": "5.4",
+                "version": "5.5",
                 "duration": time.time() - self.start_time if self.start_time else 0,
                 "summary": summary,
             })
@@ -611,6 +642,26 @@ class Pipeline(BasePipeline):
             log.warning(f"  通知发送失败 (非致命): {e}")
 
         return {"report_path": report_path}
+
+    def _stage_html_report(self):
+        """阶段 9: 生成静态 HTML 可视化报告 (ECharts 图表)。"""
+        scan_report = self.results.get("scan", {}).get("data", {})
+        expansion_report = self.results.get("llm_expand", {}).get("data")
+        readability_report = self.results.get("check_readability", {}).get("data")
+
+        output_path = os.path.join(OUTPUT_DIR, "pipeline-report.html")
+
+        report = generate_html_report(
+            pipeline_results=self.results,
+            scan_report=scan_report,
+            output_path=output_path,
+            expansion_report=expansion_report,
+            readability_report=readability_report,
+            title=t("report.title"),
+        )
+
+        log.info(f"  HTML 报告: {report['path']} ({report['size'] // 1024} KB)")
+        return report
 
     def _generate_summary_report(self) -> str:
         """生成 Markdown 格式的综合报告。"""
@@ -806,7 +857,7 @@ class Pipeline(BasePipeline):
             "",
             "---",
             "",
-            "> 自动生成 by OpenClaw Tutorial Auto Pipeline v5.4",
+            "> 自动生成 by OpenClaw Tutorial Auto Pipeline v5.5",
         ])
 
         return "\n".join(lines)
@@ -828,6 +879,8 @@ def main():
                         help="启用外部 URL 探活检查 (耗时)")
     parser.add_argument("--incremental", action="store_true",
                         help="增量模式: 仅处理自上次运行以来变更的文件")
+    parser.add_argument("--language", type=str, default=None,
+                        help="报告语言 (zh-CN / en)，默认 zh-CN")
     args = parser.parse_args()
 
     # Web 搜索默认启用
@@ -851,6 +904,7 @@ def main():
         web_search=web_search,
         check_external=args.check_external,
         incremental=getattr(args, "incremental", False),
+        language=getattr(args, "language", None),
     )
     result = pipeline.run()
 
