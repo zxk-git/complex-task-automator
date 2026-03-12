@@ -81,6 +81,7 @@ def run_tutorial_mode(args) -> dict:
         web_search=getattr(args, "web_search", True),
         check_external=getattr(args, "check_external", False),
         incremental=getattr(args, "incremental", False),
+        refine_threshold=getattr(args, "refine_threshold", None),
     )
     return pipeline.run()
 
@@ -150,6 +151,8 @@ def main():
     # 增量模式参数
     parser.add_argument("--incremental", action="store_true",
                         help="[tutorial] 增量模式: 仅处理上次运行后变更的文件 (mtime+size 缓存)")
+    parser.add_argument("--refine-threshold", type=int, default=None,
+                        help="[tutorial] 智能精炼阈值: 跳过超过此分数的章节 (如 95)")
     parser.add_argument("--diff", action="store_true",
                         help="增量模式: 仅分析 git diff 变更的文件")
     parser.add_argument("--since", type=str, default="HEAD~1",

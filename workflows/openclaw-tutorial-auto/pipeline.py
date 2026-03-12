@@ -63,16 +63,18 @@ class Pipeline(BasePipeline):
     ]
     CRITICAL_STAGES = ("discover", "scan", "analyze")
     PIPELINE_NAME = "教程自动优化流水线"
-    PIPELINE_VERSION = "5.3"
+    PIPELINE_VERSION = "5.4"
     PIPELINE_ICON = "📚"
 
     def __init__(self, max_chapters=None, dry_run=False, stages=None,
-                 web_search=True, check_external=False, incremental=False):
+                 web_search=True, check_external=False, incremental=False,
+                 refine_threshold=None):
         super().__init__(dry_run=dry_run, stages=stages)
         self.max_chapters = max_chapters
         self.web_search = web_search
         self.check_external = check_external
         self.incremental = incremental
+        self.refine_threshold = refine_threshold  # 跳过超过此分数的章节
         self.changed_files: set = set()  # 增量模式下的变更文件集合
         self._cache_path = os.path.join(OUTPUT_DIR, "file-cache.json")
 
@@ -398,6 +400,27 @@ class Pipeline(BasePipeline):
         consistency_report = self.results.get("check_consistency", {}).get("data")
         link_report = self.results.get("check_links", {}).get("data")
 
+        # ── 智能精炼阈值: 跳过已达标章节 ──
+        if self.refine_threshold and analysis_report:
+            all_chapters = analysis_report.get("chapters", [])
+            needs_refine = [
+                ch for ch in all_chapters
+                if ch.get("current_score", ch.get("quality_score", ch.get("score", 0))) < self.refine_threshold
+            ]
+            above_threshold = len(all_chapters) - len(needs_refine)
+            if above_threshold > 0:
+                log.info(f"  智能阈值({self.refine_threshold}): 跳过 {above_threshold} 个已达标章节，精炼 {len(needs_refine)} 个")
+                analysis_report = dict(analysis_report)
+                analysis_report["chapters"] = needs_refine
+            if not needs_refine:
+                log.info(f"  智能阈值({self.refine_threshold}): 全部章节已达标，跳过精炼")
+                return {
+                    "refine_time": None, "total_processed": 0,
+                    "refined": 0, "no_change": 0,
+                    "threshold_skipped": above_threshold, "results": [],
+                    "total_changes": 0,
+                }
+
         # ── 增量模式: 仅精炼变更文件 ──
         incremental_report = None
         if self.incremental and analysis_report:
@@ -580,7 +603,7 @@ class Pipeline(BasePipeline):
             scan = self.results.get("scan", {}).get("data", {})
             summary = scan.get("summary", {})
             notify_pipeline("tutorial", {
-                "version": "5.3",
+                "version": "5.4",
                 "duration": time.time() - self.start_time if self.start_time else 0,
                 "summary": summary,
             })
@@ -641,6 +664,48 @@ class Pipeline(BasePipeline):
 
         # 阅读时间与难度
         read_summary = readability.get("summary", {})
+
+        # ── 章节评分仪表板 ──
+        chapters = scan.get("chapters", [])
+        if chapters:
+            lines.extend([
+                "",
+                "## 🎯 章节评分仪表板",
+                "",
+                "| # | 章节 | 分数 | 等级 | 缺陷 | 进度条 |",
+                "|---|------|------|------|------|--------|",
+            ])
+            for ch in sorted(chapters, key=lambda c: c.get("number", 0)):
+                score = ch.get("quality_score", ch.get("score", 0))
+                grade = ch.get("score_detail", {}).get("grade", "")
+                defects = len(ch.get("defects", []))
+                # 进度条: ████░░ 格式
+                full = score // 10
+                empty = 10 - full
+                bar = "█" * full + "░" * empty
+                emoji = "🟢" if score >= 95 else "🟡" if score >= 90 else "🔴"
+                title = ch.get("title", ch.get("file", ""))[:30]
+                lines.append(
+                    f"| {ch.get('number', '?')} | {title} | {emoji} {score} | {grade} | "
+                    f"{defects} | `{bar}` |"
+                )
+
+            # 分数分布统计
+            score_vals = [ch.get("quality_score", ch.get("score", 0)) for ch in chapters]
+            if score_vals:
+                buckets = {"≥97": 0, "95-96": 0, "93-94": 0, "90-92": 0, "<90": 0}
+                for sv in score_vals:
+                    if sv >= 97: buckets["≥97"] += 1
+                    elif sv >= 95: buckets["95-96"] += 1
+                    elif sv >= 93: buckets["93-94"] += 1
+                    elif sv >= 90: buckets["90-92"] += 1
+                    else: buckets["<90"] += 1
+                dist_str = " | ".join(f"{k}: {v}" for k, v in buckets.items() if v)
+                lines.extend([
+                    "",
+                    f"**分数分布**: {dist_str}",
+                ])
+
         if read_summary:
             lines.extend([
                 "",
@@ -741,7 +806,7 @@ class Pipeline(BasePipeline):
             "",
             "---",
             "",
-            "> 自动生成 by OpenClaw Tutorial Auto Pipeline v5.3",
+            "> 自动生成 by OpenClaw Tutorial Auto Pipeline v5.4",
         ])
 
         return "\n".join(lines)

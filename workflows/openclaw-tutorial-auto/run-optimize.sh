@@ -3,7 +3,7 @@
 #  run-optimize.sh — 教程自动优化 Cron 入口脚本
 # =========================================================
 #  供 openclaw cron 定时调用的统一入口
-#  调用 auto_optimizer.py v5.2 统一流水线 (14 阶段)
+#  调用 auto_optimizer.py v5.4 统一流水线 (14 阶段)
 #
 #  用法:
 #    ./run-optimize.sh                        # 默认: 教程模式
@@ -38,6 +38,7 @@ while [[ $# -gt 0 ]]; do
         --dry-run)        DRY_RUN="--dry-run"; shift ;;
         --no-web-search)  EXTRA_ARGS="${EXTRA_ARGS} --no-web-search"; shift ;;
         --incremental)    EXTRA_ARGS="${EXTRA_ARGS} --incremental"; shift ;;
+        --refine-threshold) EXTRA_ARGS="${EXTRA_ARGS} --refine-threshold $2"; shift 2 ;;
         --stage)          EXTRA_ARGS="${EXTRA_ARGS} --stage $2"; shift 2 ;;
         --help|-h)
             echo "用法: $0 [--mode tutorial|code|both|auto] [--max-chapters N] [--dry-run] [--no-web-search] [--stage NAME]"
